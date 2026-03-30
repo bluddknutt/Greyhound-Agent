@@ -1,0 +1,190 @@
+SYSTEM PROMPT:
+----------------------------------------------------------------------
+You are an expert Australian greyhound racing analyst with deep knowledge of form analysis, pace dynamics, box-draw theory, and value betting.
+
+## Your Knowledge Base
+
+### Distance Categories
+- **Sprint (<400 m):** Early speed and box draw are critical. Inside boxes (1-2) have a significant rail advantage. The first dog to the first turn usually wins.
+- **Middle (400-500 m):** Balanced races where early speed still matters but dogs with strong mid-race pace and consistency can run down leaders.
+- **Long (>500 m):** Stamina and consistency dominate. Box draw matters less. Dogs with high win rates over distance are strongly favoured.
+
+### Box Draw Theory (Australian Tracks)
+- **Box 1-2:** Strong inside advantage, especially on sprint tracks with tight first turns.
+- **Box 3-4:** Neutral to slight advantage depending on track geometry.
+- **Box 5-6:** Neutral to slight disadvantage.
+- **Box 7-8:** Wide draw disadvantage; dogs must cover extra ground on turns.
+- **Box 9-10 (wide boxes):** Significant disadvantage on most tracks.
+
+### Key Form Indicators
+- **Win Rate (W%):** Career wins / starts. Elite dogs >25%, competitive >15%.
+- **Place Rate (P%):** (Wins + Places) / starts. Consistent dogs >45%.
+- **Prize $/Start:** Earnings per start — the best single indicator of class. Higher = stronger opposition beaten.
+- **Days Last Run (DLR):** Fitness indicator. 5-14 days ideal, >28 days = fitness query.
+- **Days Last Win (DLW):** Confidence/form indicator. <30 days = in-form.
+- **RTC:** Recent Track Class number. Lower = higher recent class level.
+- **Age:** Peak performance at 2-3 years. Decline usually starts at 4+.
+- **Career Starts:** 30-60 is experienced prime. >80 may indicate declining form.
+
+### Pace Mapping
+Identify likely race shape:
+- **Leaders:** Dogs with high early speed, inside boxes, recent front-running wins.
+- **Stalkers:** Dogs that settle 2nd-4th and finish strongly.
+- **Closers:** Dogs with strong finishing records but slow beginnings.
+Races with one clear leader and no pace pressure favour that leader. Races with multiple speed dogs create pace pressure benefiting stalkers/closers.
+
+### Betting Framework
+- **WIN bet:** High confidence (strong class edge + good draw + in-form).
+- **PLACE bet:** Consistent dog (high place rate) with some query (wide draw, returning from spell).
+- **PASS:** Competitive race with no clear edge, or insufficient data to assess.
+- **Value:** When a dog's true chance is better than its score suggests (e.g. class dropper, returning champion, favourable pace scenario).
+
+## Your Task
+Analyse the race data provided below. For EACH race:
+
+1. **Assess** each runner's class, form, fitness, box draw, and age profile.
+2. **Map the pace** — identify likely leaders and how the race will be run.
+3. **Rank** all runners from 1st to last with a brief reason for each.
+4. **Recommend** a betting action: WIN / PLACE / PASS with reasoning.
+5. **Flag value plays** where the model score may underrate a dog.
+6. **Confidence level** for your top pick: HIGH / MEDIUM / LOW.
+
+Format your analysis clearly with headers for each race.
+
+----------------------------------------------------------------------
+USER PROMPT:
+----------------------------------------------------------------------
+
+======================================================================
+GREYHOUND RACING ANALYSIS — FULL CARD
+======================================================================
+
+Tracks: 1 | Races: 1 | Total Runners: 87
+
+SCORING METHODOLOGY:
+The model scores each runner 0-50 using these weighted factors:
+  - Class Rating (prize $/start, normalised within race)
+  - Form Rating (60% win rate + 40% place rate)
+  - Box Advantage (distance-aware inside/outside bias)
+  - Recent Form Boost (days since last run + recent win activity)
+  - Days-Since-Last-Win Factor (recency of winning)
+  - Age Factor (peak at 2-3 years)
+  - RTC Class Factor (recent track class, normalised)
+  - Experience Factor (career starts, capped at 30)
+  - Overexposed Penalty (>80 career starts)
+Weights shift by distance: sprints favour box draw & form; long races favour consistency & class.
+
+----------------------------------------------------------------------
+RACE DATA
+----------------------------------------------------------------------
+
+======================================================================
+RACE 0 — Unknown — 400m (Middle)
+======================================================================
+
+Box | Dog                    |    W% |    P% | Starts |  $/Start |  DLR |   DLW | Age |  RTC |  Score
+-----------------------------------------------------------------------------------------------------
+  1 | Flying Damiro          |   15% |   41% |     34 | $    240 |    7 |     7 |   2 |   32 |   28.2
+  1 | Nicked Again           |   35% |   53% |     17 | $    260 |    6 |    25 |   2 |   18 |   27.4
+  1 | Cruisin' Grae          |   18% |   45% |     11 | $    301 |    7 |    14 |   2 |   12 |   27.3
+  1 | Glimmer Of Hope        |   20% |   40% |      5 | $    266 |    7 |     7 |   2 |    6 |   26.3
+  2 | Bush Big Show          |   19% |   41% |     27 | $    320 |    4 |    46 |   2 |   28 |   26.1
+  1 | Panama Rebel           |    7% |   36% |     44 | $    165 |    7 |    21 |   3 |   13 |   26.0
+  4 | Harajuku Lass          |   21% |   43% |     63 | $    382 |    7 |     7 |   3 |   64 |   25.5
+  1 | Femoris                |   12% |   32% |     25 | $    174 |    7 |    28 |   2 |   26 |   25.1
+  4 | Paw Tiffy              |   27% |   55% |     11 | $    609 |   13 |    17 |   1 |   12 |   24.1
+  3 | Aston Denton           |   12% |   28% |     25 | $    156 |    7 |     7 |   2 |   26 |   23.9
+  1 | Paw Alexis             |    9% |   38% |     68 | $    463 |    3 |   151 |   3 |   67 |   23.3
+  7 | Berringa Paddy         |   19% |   57% |     21 | $    259 |    6 |    14 |   2 |   22 |   23.2
+  7 | Jill's Fantasy         |   16% |   34% |     32 | $    278 |    7 |     7 |   2 |   33 |   23.1
+  5 | Fernando Lee           |   23% |   50% |     22 | $    174 |    7 |    25 |   2 |   23 |   23.0
+  8 | Whizbang Josie         |   16% |   32% |     38 | $    201 |    4 |     4 |   3 |   37 |   22.9
+  3 | Bluer Than Blue        |   10% |   39% |     49 | $    164 |    7 |    21 |   2 |   50 |   22.6
+  5 | xVoss Ali              |   19% |   40% |     42 | $  1,106 |   96 |   383 |   3 |   FU |   22.5
+  3 | Bush Jewel             |   14% |   39% |     28 | $    208 |   14 |    28 |   2 |   29 |   22.1
+  8 | Shiny New Toy          |   17% |   45% |     75 | $    271 |    7 |    14 |   3 |   76 |   21.6
+  1 | Upper's Flyer          |   10% |   39% |     70 | $    213 |    7 |   175 |   4 |   28 |   21.4
+  3 | Lilly's Wish           |   10% |   50% |     10 | $    277 |    7 |    34 |   2 |   11 |   21.3
+  2 | Tears In Rain          |   13% |   40% |     15 | $    363 |    6 |   206 |   2 |    9 |   21.3
+  2 | Moonlight Comet        |    6% |   43% |     47 | $    119 |   11 |    46 |   3 |   48 |   20.9
+  3 | Myola Thalia           |    6% |   25% |     65 | $    108 |    8 |    29 |   3 |   66 |   20.7
+  2 | Duke Caboom            |   12% |   45% |     58 | $    224 |   21 |    70 |   3 |   59 |   20.6
+  3 | Mana's Way             |    7% |   37% |     57 | $    145 |   21 |    41 |   3 |   21 |   20.3
+  4 | Aminah                 |   18% |   45% |     56 | $    328 |    7 |   133 |   4 |   20 |   20.2
+  6 | Lollipop Kiss          |   20% |   20% |      5 | $    336 |    7 |    18 |   1 |    6 |   20.1
+  2 | Olympic History        |   12% |   35% |     57 | $    194 |    4 |   249 |   4 |   58 |   20.0
+  6 | Belair Blue            |   12% |   38% |     32 | $    246 |    7 |   116 |   2 |   33 |   19.5
+  6 | What A Wrought         |   14% |   64% |     22 | $    169 |   11 |    32 |   2 |   23 |   19.2
+  4 | Bedevilled             |    7% |   36% |     28 | $    184 |    7 |    70 |   2 |   29 |   19.2
+  5 | Oh So Bree             |    7% |   39% |     54 | $    241 |    7 |    95 |   3 |   55 |   19.2
+  3 | Lektra Damian          |   11% |   45% |     65 | $    229 |    4 |   144 |   3 |   66 |   19.2
+  2 | Serratus               |   13% |   32% |     38 | $    179 |   40 |    77 |   3 |   39 |   19.2
+  1 | Saint Tay              |    8% |   40% |     95 | $    224 |    7 |   153 |   3 |   94 |   19.1
+  3 | Pest Express           |    5% |   24% |     41 | $    122 |    7 |   105 |   3 |   36 |   18.9
+  6 | Lektra Hopper          |    9% |   41% |     32 | $    183 |    7 |    70 |   2 |   33 |   18.9
+  4 | Chief Hamish           |    4% |   41% |     27 | $    143 |    7 |    63 |   2 |   28 |   18.7
+  5 | Seance Sam             |   12% |   36% |     81 | $    233 |   21 |    55 |   4 |   56 |   18.6
+  4 | Resign The Plow        |   10% |   36% |     61 | $    247 |   21 |    63 |   3 |   43 |   18.5
+  2 | New Line               |    9% |   37% |     54 | $    291 |   28 |   192 |   3 |   55 |   18.4
+  2 | Neighbours Alarm       |    2% |   34% |     53 | $    109 |    7 |   364 |   4 |   49 |   18.2
+  1 | Inga Extreme           |    2% |    7% |     41 | $     43 |    7 |   245 |   3 |   42 |   18.0
+  7 | Intuitive              |   10% |   53% |     58 | $    273 |    7 |    98 |   4 |   59 |   17.7
+  3 | Jeff The Man           |    4% |   26% |     74 | $    103 |    7 |   245 |   4 |   12 |   17.7
+  4 | Step On Air            |   11% |   41% |     70 | $    195 |   13 |    77 |   3 |   71 |   17.3
+  8 | Miss Jeckell           |   13% |   37% |     46 | $    220 |    7 |    95 |   2 |   47 |   17.2
+  3 | Bragging Rights        |   14% |   29% |      7 | $    119 |   14 |    53 |   1 |    8 |   17.0
+  7 | Presence               |   11% |   33% |      9 | $    262 |   11 |    29 |   1 |   10 |   17.0
+  4 | fIdentify As           |    4% |   16% |     50 | $     66 |    7 |    98 |   3 |   51 |   16.6
+  6 | Aston Breeze           |   11% |   36% |     56 | $    204 |    7 |   135 |   3 |   57 |   16.6
+  5 | Henry Bale             |    6% |   38% |     82 | $    201 |    7 |   308 |   4 |   53 |   16.6
+  5 | Rusty Wheels           |    7% |   40% |     60 | $    128 |    7 |   165 |   3 |   61 |   16.5
+  7 | Collective Kaos        |   20% |   60% |      5 | $    201 |   14 |    39 |   1 |    6 |   16.3
+  8 | Leta Lestrange         |   12% |   12% |      8 | $    138 |    7 |    28 |   1 |    9 |   16.2
+  6 | Saint Jade             |    7% |   32% |    100 | $    142 |    4 |   119 |   3 |  101 |   16.0
+  7 | Inga Amy               |    9% |   34% |     67 | $    159 |    7 |    98 |   3 |   68 |   15.9
+  6 | Paw Whisper            |    4% |   43% |     28 | $    181 |    7 |   425 |   2 |   18 |   15.9
+  2 | Noble Dash             |    0% |   50% |      6 | $    119 |   10 |     — |   1 |    7 |   15.5
+  4 | Super Sort             |    6% |   22% |     68 | $    109 |    7 |   139 |   3 |   64 |   15.4
+  6 | Pinot Grigio           |    8% |   38% |     40 | $    178 |   11 |   214 |   4 |   41 |   15.3
+  2 | Major Envy             |    0% |   33% |      9 | $     59 |    7 |     — |   2 |   10 |   15.1
+  8 | Aston Cleese           |   15% |   31% |     13 | $    226 |   14 |   102 |   2 |   14 |   14.8
+  8 | Finish The Arena       |    9% |   35% |     46 | $    194 |   11 |   263 |   3 |   30 |   14.6
+  7 | xSmart Operator        |   16% |   37% |     63 | $    189 |   71 |    88 |   4 |   FU |   13.5
+  1 | She's Just Fine        |    0% |   17% |      6 | $     49 |   11 |     — |   1 |    7 |   13.4
+  7 | Myola Dusk             |    5% |   24% |     84 | $     78 |    7 |   210 |   4 |   37 |   13.4
+  7 | Aston Telmont          |   10% |   20% |     10 | $    146 |   39 |    55 |   2 |   10 |   13.3
+  6 | xAston Crown           |    3% |   43% |     30 | $    156 |  174 |   318 |   3 |   FU |   13.3
+  7 | xAston Acacia          |    8% |   33% |     36 | $    188 |   98 |    98 |   3 |   FU |   13.3
+  4 | Sally Shine            |    0% |   28% |     18 | $     88 |    8 |     — |   1 |   19 |   13.1
+  1 | Kissed In Paris        |    0% |    0% |      4 | $      0 |    7 |     — |   1 |    5 |   13.0
+  4 | Summer Crush           |    0% |   20% |     15 | $     58 |    7 |     — |   2 |   15 |   12.8
+  8 | Alpha Girl             |    4% |   19% |     72 | $     93 |    4 |   160 |   4 |   73 |   12.7
+  7 | Illusive Lass          |    0% |   42% |     12 | $    142 |    6 |     — |   2 |   13 |   12.1
+  1 | xDimora Patch          |    0% |   29% |      7 | $    109 |  168 |     — |   2 |   FU |   12.0
+  6 | Tilly May              |    0% |   25% |      4 | $    130 |    7 |     — |   2 |    5 |   11.8
+  4 | Guardian               |    0% |   33% |      9 | $    111 |   11 |     — |   1 |   10 |   11.7
+  3 | Kirsty's Car           |    0% |    0% |      4 | $      0 |    7 |     — |   2 |    5 |   11.2
+  8 | xDimora Stripey        |   20% |   40% |     10 | $    278 |  168 |   175 |   2 |   FU |   11.0
+  5 | Sir Starbuck           |    0% |   25% |      4 | $     65 |   11 |     — |   1 |    5 |   10.5
+  8 | xAston Sinatra         |   10% |   33% |     61 | $    174 |  112 |   476 |   4 |   FU |   10.4
+  5 | Eden's Dream           |    0% |    0% |      3 | $      0 |    6 |     — |   2 |    4 |   10.3
+  6 | Meadow Moo             |    0% |    0% |      3 | $      0 |    5 |     — |   2 |    4 |   10.1
+  6 | Paw Irulan             |    0% |   20% |      5 | $    104 |   14 |     — |   1 |    6 |    9.9
+  8 | What Odds Billy        |    0% |   21% |     14 | $     57 |   15 |     — |   2 |   14 |    9.5
+
+Model Top 3:
+  1. Flying Damiro (Box 1) — Score 28.2
+  2. Nicked Again (Box 1) — Score 27.4
+  3. Cruisin' Grae (Box 1) — Score 27.3
+
+======================================================================
+ANALYSIS REQUEST
+======================================================================
+
+Please analyse each race above following the framework in the system prompt. For each race provide:
+1. Runner-by-runner assessment (2-3 sentences each)
+2. Pace map / likely race shape
+3. Final ranking (1st to last)
+4. Betting recommendation: WIN / PLACE / PASS + reasoning
+5. Any value plays the model may have missed
+6. Confidence level: HIGH / MEDIUM / LOW

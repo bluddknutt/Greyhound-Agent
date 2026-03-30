@@ -3,7 +3,8 @@ import numpy as np
 import pdfplumber
 import os
 from src.parser import parse_race_form
-from src.features import compute_features  # ✅ Enhanced scoring logic
+from src.features import compute_features
+from src.llm_prompt import generate_full_card_prompt
 
 def extract_text_from_pdf(pdf_path):
     text = ""
@@ -70,6 +71,9 @@ print("🎯 Saved top picks → outputs/picks.csv")
 print("\n🏁 Top Picks Across All Tracks:")
 for _, row in picks.iterrows():
     print(f"{row.Track} | Race {row.RaceNumber} | {row.DogName} | Score: {round(row.FinalScore, 3)}")
+
+# ✅ Generate LLM analysis prompt
+generate_full_card_prompt(ranked)
 
 print("\n📌 Press Enter to exit...")
 input()
