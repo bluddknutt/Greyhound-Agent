@@ -26,7 +26,7 @@ def parse_race_form(text):
 
         # Match dog entry with glued form number
         dog_match = re.match(
-            r"""^(\d+)\.?\s*([0-9]{3,6})?([A-Za-z'’\- ]+)\s+(\d+[a-z])\s+([\d.]+)kg\s+(\d+)\s+([A-Za-z'’\- ]+)\s+(\d+)\s*-\s*(\d+)\s*-\s*(\d+)\s+\$([\d,]+)\s+(\S+)\s+(\S+)\s+(\S+)""",
+            r"""^(\d+)\.?\s*([0-9]{3,6})?([A-Za-z''\- ]+)\s+(\d+[a-z])\s+([\d.]+)kg\s+(\d+)\s+([A-Za-z''\- ]+)\s+(\d+)\s*-\s*(\d+)\s*-\s*(\d+)\s+\$([\d,]+)\s+(\S+)\s+(\S+)\s+(\S+)""",
             line
         )
 
@@ -59,13 +59,9 @@ def parse_race_form(text):
             })
             continue
 
-        # Match Best/Sectional/Last3 block
+        # Match Best/Sectional/Last3 block (single line from PDF text extraction)
         time_match = re.match(
-            r"""Best:\s*(\d+\.\d+)\s+Sectional:\s*(\d+\.\d+)\s+Last3:\s*
-
-\[(.*?)\]
-
-""",
+            r"Best:\s*([\d.]+)\s+Sectional:\s*([\d.]+)\s+Last3:\s*\[(.*?)\]",
             line
         )
         if time_match and dogs:
@@ -74,23 +70,16 @@ def parse_race_form(text):
             try:
                 last3 = [float(t.strip()) for t in time_match.group(3).split(",")]
                 dogs[-1]["Last3TimesSec"] = last3
-            except:
+            except Exception:
                 dogs[-1]["Last3TimesSec"] = []
 
-        # Match Margins block
-        margin_match = re.match(
-            r"""Margins:\s*
-
-\[(.*?)\]
-
-""",
-            line
-        )
+        # Match Margins block (single line)
+        margin_match = re.match(r"Margins:\s*\[(.*?)\]", line)
         if margin_match and dogs:
             try:
                 margins = [float(m.strip()) for m in margin_match.group(1).split(",")]
                 dogs[-1]["Margins"] = margins
-            except:
+            except Exception:
                 dogs[-1]["Margins"] = []
 
     df = pd.DataFrame(dogs)
