@@ -4,6 +4,7 @@ import pdfplumber
 import os
 from src.parser import parse_race_form
 from src.features import compute_features  # ✅ Enhanced scoring logic
+from src.prompt_generator import generate_llm_analysis_prompt, save_prompt
 
 def extract_text_from_pdf(pdf_path):
     text = ""
@@ -70,6 +71,10 @@ print("🎯 Saved top picks → outputs/picks.csv")
 print("\n🏁 Top Picks Across All Tracks:")
 for _, row in picks.iterrows():
     print(f"{row.Track} | Race {row.RaceNumber} | {row.DogName} | Score: {round(row.FinalScore, 3)}")
+
+# ✅ Generate LLM analysis prompt
+prompt = generate_llm_analysis_prompt(picks, ranked)
+save_prompt(prompt, "outputs/llm_analysis_prompt.txt")
 
 print("\n📌 Press Enter to exit...")
 input()
