@@ -2,8 +2,10 @@ import pandas as pd
 import numpy as np
 import pdfplumber
 import os
+import datetime
 from src.parser import parse_race_form
 from src.features import compute_features  # ✅ Enhanced scoring logic
+from results_tracker import log_prediction
 
 def extract_text_from_pdf(pdf_path):
     text = ""
@@ -65,6 +67,42 @@ picks = picks[ordered_cols]
 
 picks.to_csv("outputs/picks.csv", index=False)
 print("🎯 Saved top picks → outputs/picks.csv")
+
+# ✅ Log top 3 predictions per race to results tracker
+top3 = (
+    ranked
+    .groupby(["Track", "RaceNumber"], group_keys=False)
+    .head(3)
+    .reset_index(drop=True)
+)
+top3["_rank"] = top3.groupby(["Track", "RaceNumber"]).cumcount() + 1
+
+today_str = datetime.date.today().isoformat()
+logged_count = 0
+for (track, race_num), grp in top3.groupby(["Track", "RaceNumber"]):
+    scores = grp["FinalScore"].values
+    separation = (scores[0] - scores[1]) if len(scores) >= 2 else 0
+    if scores[0] > 42 and separation > 3:
+        tier = "high"
+    elif scores[0] > 40 and separation > 2:
+        tier = "medium"
+    else:
+        tier = "low"
+    race_date = str(grp.iloc[0].get("RaceDate", today_str) or today_str)
+    for rank_idx, (_, row) in enumerate(grp.iterrows(), start=1):
+        log_prediction(
+            meeting=str(track),
+            race_number=int(race_num),
+            date=race_date,
+            dog_name=str(row["DogName"]),
+            predicted_rank=rank_idx,
+            odds_at_prediction=None,
+            stake=10.0,
+            confidence_tier=tier,
+        )
+        logged_count += 1
+
+print(f"📝 Logged {logged_count} predictions → data/results.db")
 
 # ✅ Display top picks
 print("\n🏁 Top Picks Across All Tracks:")
