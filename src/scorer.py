@@ -497,3 +497,26 @@ if __name__ == "__main__":
     existing = [c for c in keep if c in top4.columns]
     top4[existing].to_csv(out_path, index=False)
     print(f"Predictions saved to {out_path}")
+
+    # Auto-log top-4 predictions to the P&L tracker
+    try:
+        from src.results_tracker import log_prediction
+        today_str = TODAY.strftime("%Y-%m-%d")
+        logged = 0
+        for _, row in top4.iterrows():
+            row_id = log_prediction(
+                meeting=str(row.get("venue", "")),
+                race_number=int(row.get("race_number", 0)),
+                date=today_str,
+                dog_name=str(row.get("dog_name", "")),
+                box=int(row.get("box", 0)) if not pd.isna(row.get("box", float("nan"))) else 0,
+                predicted_rank=int(row.get("predicted_rank", 4)),
+                composite_score=float(row.get("composite", 0.0)),
+                win_prob=float(row.get("win_prob", 0.0)),
+                odds_at_prediction=float(row.get("implied_odds", 0.0)),
+            )
+            if row_id is not None:
+                logged += 1
+        print(f"Logged {logged} prediction(s) to P&L tracker.")
+    except Exception as exc:
+        print(f"[WARN] Could not log predictions to P&L tracker: {exc}")
