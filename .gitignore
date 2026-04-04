@@ -17,3 +17,7 @@ env/
 # Editor
 .DS_Store
 *.swp
+
+# SQLite databases (generated at runtime)
+*.db
+data/*.db
