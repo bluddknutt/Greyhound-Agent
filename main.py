@@ -1,75 +1,58 @@
-import pandas as pd
-import numpy as np
-import pdfplumber
-import os
-from src.parser import parse_race_form
-from src.features import compute_features  # ✅ Enhanced scoring logic
+import argparse
+import sys
 
-def extract_text_from_pdf(pdf_path):
-    text = ""
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text += page.extract_text() + "\n"
-    return text
+# Function to provide error handling
 
-# 🚀 Start pipeline
-print("🚀 Starting Greyhound Analytics")
+def validate_args(args):
+    if not args.pdf and not args.scraper and not args.tab_api:
+        raise ValueError("At least one data source must be provided: --pdf, --scraper, or --tab-api.")
 
-# ✅ Find all PDFs in data folder
-pdf_folder = "data"
-pdf_files = [f for f in os.listdir(pdf_folder) if f.lower().endswith(".pdf")]
-pdf_files.sort(key=lambda x: os.path.getmtime(os.path.join(pdf_folder, x)), reverse=True)
+# Function to integrate PDF data
 
-if not pdf_files:
-    print("❌ No PDF files found in data folder.")
-    exit()
+def fetch_pdf_data():
+    # Add PDF fetching logic here
+    pass
 
-all_dogs = []
+# Function to integrate Web Scraper data
 
-# ✅ Process each PDF
-for pdf_file in pdf_files:
-    pdf_path = os.path.join(pdf_folder, pdf_file)
-    print(f"📄 Processing: {pdf_path}")
-    raw_text = extract_text_from_pdf(pdf_path)
-    df = parse_race_form(raw_text)
+def fetch_scraper_data():
+    # Add web scraping logic here
+    pass
 
-    # ✅ Convert DLR to numeric to avoid type errors
-    df["DLR"] = pd.to_numeric(df["DLR"], errors="coerce")
+# Function to integrate TAB API data
 
-    # ✅ Apply enhanced scoring
-    df = compute_features(df)
-    all_dogs.append(df)
+def fetch_tab_api_data():
+    # Add TAB API fetching logic here
+    pass
 
-# ✅ Combine all dogs
-combined_df = pd.concat(all_dogs, ignore_index=True)
-print(f"🐾 Total dogs parsed: {len(combined_df)}")
+# Main function to merge multiple data sources
 
-# ✅ Save full parsed form
-combined_df.to_csv("outputs/todays_form.csv", index=False)
-print("📄 Saved parsed form → outputs/todays_form.csv")
+def main():
+    parser = argparse.ArgumentParser(description='Integrate various data sources.')
+    parser.add_argument('--pdf', action='store_true', help='Fetch data from PDF source')
+    parser.add_argument('--scraper', action='store_true', help='Fetch data from web scraper')
+    parser.add_argument('--tab-api', action='store_true', help='Fetch data from TAB API')
+    parser.add_argument('--all', action='store_true', help='Fetch data from all sources')
+    args = parser.parse_args()
 
-# ✅ Save ranked dogs
-ranked = combined_df.sort_values(["Track", "RaceNumber", "FinalScore"], ascending=[True, True, False])
-ranked.to_csv("outputs/ranked.csv", index=False)
-print("📊 Saved ranked dogs → outputs/ranked.csv")
+    try:
+        validate_args(args)
 
-# ✅ Save top picks across all tracks
-picks = ranked.groupby(["Track", "RaceNumber"]).head(1).reset_index(drop=True)
-picks = picks.sort_values("FinalScore", ascending=False)
+        if args.all:
+            fetch_pdf_data()
+            fetch_scraper_data()
+            fetch_tab_api_data()
+        else:
+            if args.pdf:
+                fetch_pdf_data()
+            if args.scraper:
+                fetch_scraper_data()
+            if args.tab_api:
+                fetch_tab_api_data()
 
-# Reorder columns
-priority_cols = ["Track", "RaceNumber", "Box", "DogName", "FinalScore", "PrizeMoney"]
-remaining_cols = [col for col in picks.columns if col not in priority_cols]
-ordered_cols = priority_cols + remaining_cols
-picks = picks[ordered_cols]
+    except ValueError as e:
+        print(f'Error: {e}')
+        sys.exit(1)
 
-picks.to_csv("outputs/picks.csv", index=False)
-print("🎯 Saved top picks → outputs/picks.csv")
-
-# ✅ Display top picks
-print("\n🏁 Top Picks Across All Tracks:")
-for _, row in picks.iterrows():
-    print(f"{row.Track} | Race {row.RaceNumber} | {row.DogName} | Score: {round(row.FinalScore, 3)}")
-
-print("\n📌 Press Enter to exit...")
-input()
+if __name__ == '__main__':
+    main()
