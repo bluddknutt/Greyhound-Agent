@@ -1,10 +1,7 @@
 """
-Fetch today's greyhound race form guide and save to CSV.
+Fetch today's upcoming race form data from thedogs.com.au and save to CSV.
 
-Wraps src/scrapers/scrape_form_guide.py.
-Output: outputs/form_guide_YYYY-MM-DD.csv
-
-Run from project root:
+Usage (called by run_now.sh — TZ is already set):
     python scripts/fetch_races.py
 """
 
@@ -18,14 +15,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.scrapers.scrape_form_guide import scrape_all_upcoming
 
-AEST = timezone(timedelta(hours=11))  # AEDT; TZ env var set by run_now.sh handles DST
-
+AEST = timezone(timedelta(hours=11))  # AEDT; AEST is +10 but TZ env var handles DST
 
 if __name__ == "__main__":
     now = datetime.now(AEST)
     date_str = now.strftime("%Y-%m-%d")
 
-    print(f"Fetching races for {date_str}...")
+    print(f"Fetching form guide for {date_str} (AEST)...")
     all_data = scrape_all_upcoming(date_str, now)
 
     if not all_data:
@@ -34,6 +30,6 @@ if __name__ == "__main__":
 
     os.makedirs("outputs", exist_ok=True)
     df = pd.DataFrame(all_data)
-    path = f"outputs/form_guide_{date_str}.csv"
-    df.to_csv(path, index=False)
-    print(f"Saved {len(df)} runners → {path}")
+    out_path = f"outputs/form_guide_{date_str}.csv"
+    df.to_csv(out_path, index=False)
+    print(f"Saved {len(df)} runners across {df['venue'].nunique()} venues → {out_path}")

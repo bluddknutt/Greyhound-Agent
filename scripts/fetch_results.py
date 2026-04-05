@@ -1,11 +1,14 @@
 """
-Fetch today's race results and compute P&L against predictions.
+Fetch today's actual race results and compute P&L against predictions.
 
-Track normalisation maps FastTrack codes / short abbreviations to the
-canonical full names stored in predictions (e.g. "ALB" → "Albion Park").
+Track normalisation:
+  FastTrack API may return numeric codes ("400"), short abbreviations ("ALB"),
+  or mixed-case names. Predictions store full human-readable names ("Albion Park").
+  normalise_track_name() resolves all three cases.
 
-Run from project root:
-    python scripts/fetch_results.py
+Usage:
+    python scripts/fetch_results.py          # print P&L for today
+    python scripts/fetch_results.py 2025-11-25   # specific date
 """
 
 import os
@@ -21,39 +24,51 @@ from src.data.mapping import trackCodes
 
 AEST = timezone(timedelta(hours=11))
 
-# ── Track name lookup tables ─────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Track name lookup tables
+# ─────────────────────────────────────────────────────────────
 
-# FastTrack 3-letter abbreviations → canonical full name
+# FastTrack 3-letter abbreviations → canonical name
 SHORT_CODE_MAP = {
     "ALB": "Albion Park",
     "ANG": "Angle Park",
+    "ARM": "Armidale",
     "BAL": "Ballarat",
     "BEN": "Bendigo",
+    "BEE": "Beenleigh",
+    "BRM": "Barmera",
     "BUL": "Bulli",
+    "BUN": "Bundaberg",
+    "CAI": "Cairns",
     "CAN": "Cannington",
     "CAP": "Capalaba",
     "CAS": "Casino",
-    "CRN": "Cranbourne",
+    "CES": "Cessnock",
+    "CRA": "Cranbourne",
     "DAP": "Dapto",
     "DAR": "Darwin",
     "DEV": "Devonport",
+    "DUB": "Dubbo",
     "GAW": "Gawler",
     "GEE": "Geelong",
-    "GLD": "Gold Coast",
-    "GRF": "Grafton",
+    "GOC": "Gold Coast",
+    "GOS": "Gosford",
+    "GRA": "Grafton",
+    "HEA": "Healesville",
     "HOB": "Hobart",
     "HOR": "Horsham",
     "IPS": "Ipswich",
     "LAU": "Launceston",
+    "LAW": "Lawnton",
     "LIS": "Lismore",
-    "MAN": "Mandurah",
     "MAI": "Maitland",
-    "MAK": "Mackay",
+    "MAN": "Mandurah",
     "MEA": "The Meadows",
-    "MTG": "Mount Gambier",
-    "MTI": "Mt Isa",
-    "MBR": "Murray Bridge",
+    "MUR": "Murray Bridge",
     "NEW": "Newcastle",
+    "NOW": "Nowra",
+    "ORA": "Orange",
+    "PEN": "Penrith",
     "ROC": "Rockhampton",
     "SAL": "Sale",
     "SAN": "Sandown Park",
@@ -61,71 +76,74 @@ SHORT_CODE_MAP = {
     "TOO": "Toowoomba",
     "TOW": "Townsville",
     "TRA": "Traralgon",
-    "WAG": "Wagga Wagga",
     "WAN": "Wangaratta",
-    "WNP": "Wentworth Park",
+    "WAG": "Wagga Wagga",
+    "WAR": "Warragul",
+    "WEN": "Wentworth Park",
     "WYO": "Wyong",
 }
 
-# Numeric code → canonical name (from mapping.py)
-_CODE_TO_NAME: dict[str, str] = {str(t["trackCode"]): t["trackName"] for t in trackCodes}
+# Numeric trackCode → trackName  (e.g. "400" → "Albion Park")
+TRACK_CODE_TO_NAME: dict = {str(t["trackCode"]): t["trackName"] for t in trackCodes}
 
-# Lower-case name → canonical name
-_NAME_LOWER: dict[str, str] = {t["trackName"].lower(): t["trackName"] for t in trackCodes}
-_ALL_NAMES_LOWER = list(_NAME_LOWER.keys())
+# Lowercase trackName → canonical trackName  (for case-insensitive exact match)
+TRACK_NAME_LOWER: dict = {t["trackName"].lower(): t["trackName"] for t in trackCodes}
+_ALL_NAMES_LOWER = list(TRACK_NAME_LOWER.keys())
 
-
-# ── Normalisation ─────────────────────────────────────────────────────────────
 
 def normalise_track_name(raw: str) -> str:
     """
-    Map a FastTrack identifier to the canonical human-readable track name.
+    Map any FastTrack track identifier to the canonical human-readable name.
 
     Resolution order:
       1. 3-letter short code (e.g. "ALB" → "Albion Park")
-      2. Numeric track code  (e.g. "400" → "Albion Park")
-      3. Case-insensitive exact match (e.g. "albion park" → "Albion Park")
-      4. Fuzzy match against all known names (cutoff 0.6)
-      5. Return raw value unchanged
+      2. Numeric code string  (e.g. "400" → "Albion Park")
+      3. Case-insensitive exact name match
+      4. Fuzzy match via difflib (cutoff=0.6)
+      5. Return raw unchanged
     """
     if not raw:
         return raw
     s = str(raw).strip()
 
-    # 1. Short alphabetic code
+    # Short code lookup (upper-case)
     upper = s.upper()
     if upper in SHORT_CODE_MAP:
         return SHORT_CODE_MAP[upper]
 
-    # 2. Numeric code
+    # Numeric code lookup
     if s.isdigit():
-        return _CODE_TO_NAME.get(s, s)
+        return TRACK_CODE_TO_NAME.get(s, s)
 
-    # 3. Exact case-insensitive
+    # Case-insensitive exact match
     lower = s.lower()
-    if lower in _NAME_LOWER:
-        return _NAME_LOWER[lower]
+    if lower in TRACK_NAME_LOWER:
+        return TRACK_NAME_LOWER[lower]
 
-    # 4. Fuzzy match
+    # Fuzzy match
     matches = get_close_matches(lower, _ALL_NAMES_LOWER, n=1, cutoff=0.6)
     if matches:
-        return _NAME_LOWER[matches[0]]
+        return TRACK_NAME_LOWER[matches[0]]
 
     return s
 
 
-# ── P&L computation ───────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# P&L computation
+# ─────────────────────────────────────────────────────────────
 
 def compute_pnl(predictions: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
     """
-    Match top predictions against actual race winners and return a P&L table.
+    Match top predictions against actual race winners and compute P&L.
 
     Parameters
     ----------
     predictions : DataFrame
-        Must contain: Track (human-readable), RaceNumber, DogName, FinalScore
+        Columns required: Track, RaceNumber, DogName, FinalScore
+        (output of main.py PDF pipeline or CSV picks.csv)
     results : DataFrame
-        Must contain: track (code or name), race_number, winner
+        Columns required: track, race_number, winner
+        `track` may be a numeric code, short code, or full name.
 
     Returns
     -------
@@ -137,7 +155,7 @@ def compute_pnl(predictions: pd.DataFrame, results: pd.DataFrame) -> pd.DataFram
     predictions = predictions.copy()
     predictions["track_normalised"] = predictions["Track"].apply(normalise_track_name)
 
-    # One top pick per race
+    # Top-scored pick per race
     top_picks = (
         predictions.sort_values("FinalScore", ascending=False)
         .groupby(["track_normalised", "RaceNumber"], sort=False)
@@ -161,40 +179,41 @@ def compute_pnl(predictions: pd.DataFrame, results: pd.DataFrame) -> pd.DataFram
     return merged[["track_normalised", "RaceNumber", "DogName", "winner", "correct", "pnl"]]
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    now = datetime.now(AEST)
-    date_str = now.strftime("%Y-%m-%d")
+    date_str = sys.argv[1] if len(sys.argv) > 1 else datetime.now(AEST).strftime("%Y-%m-%d")
 
     picks_path = "outputs/picks.csv"
     results_path = f"outputs/results_{date_str}.csv"
 
     if not os.path.exists(picks_path):
-        print(f"No picks found at {picks_path} — run main.py first.")
+        print(f"No picks file found at {picks_path} — run the prediction pipeline first.")
         sys.exit(0)
-
-    predictions = pd.read_csv(picks_path)
 
     if not os.path.exists(results_path):
         print(f"Results not yet available ({results_path} not found).")
-        print("Re-run after today's races have finished.")
+        print("Re-run after races have finished and results are saved.")
         sys.exit(0)
 
+    predictions = pd.read_csv(picks_path)
     results = pd.read_csv(results_path)
+
     pnl_df = compute_pnl(predictions, results)
 
     if pnl_df.empty:
-        print("No matching races found between picks and results.")
+        print("No matched races between picks and results.")
         sys.exit(0)
 
-    print("\n=== P&L Summary ===")
+    print(f"\n=== P&L for {date_str} ===")
     print(pnl_df.to_string(index=False))
-    net = pnl_df["pnl"].sum()
     wins = int(pnl_df["correct"].sum())
     n = len(pnl_df)
-    print(f"\nNet: {net:+.2f} units  |  {wins}/{n} correct ({wins/n:.0%})")
+    net = pnl_df["pnl"].sum()
+    print(f"\nResult: {wins}/{n} correct  |  Net: {net:+.2f} units")
 
-    out_path = f"outputs/pnl_{date_str}.csv"
-    pnl_df.to_csv(out_path, index=False)
-    print(f"Saved → {out_path}")
+    out = f"outputs/pnl_{date_str}.csv"
+    pnl_df.to_csv(out, index=False)
+    print(f"Saved → {out}")
