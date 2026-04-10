@@ -1,0 +1,40 @@
+scraper:
+  source: "thedogs.com.au"
+  delay_between_requests: 0.3
+  max_retries: 3
+  timeout: 30
+  user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+scorer:
+  weights:
+    speed: 0.25
+    form: 0.22
+    box_bias: 0.12
+    class: 0.10
+    early_speed: 0.10
+    consistency: 0.11
+    track_fitness: 0.10
+  min_win_prob_threshold: 0.15
+
+email:
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  from_address: ""
+  to_address: ""
+  # Credentials must be set via env vars: SMTP_USER, SMTP_PASS
+  # EMAIL_TO overrides to_address
+
+dashboard:
+  port: 5000
+  refresh_interval: 300
+  dark_theme: true
+
+scheduler:
+  morning_time: "07:00"
+  evening_time: "16:00"
+  timezone: "Australia/Brisbane"
+
+tracking:
+  bet_amount: 10.0
+  currency: "AUD"
+  bet_type: "win"

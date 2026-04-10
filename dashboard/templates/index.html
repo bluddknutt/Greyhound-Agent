@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="refresh" content="{{ refresh_interval }}" />
+  <title>Greyhound Picks — {{ date }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="site-header">
+    <div class="container">
+      <div class="header-left">
+        <h1 class="logo">Greyhound Picks</h1>
+        <span class="date-badge">{{ date }}</span>
+      </div>
+      <div class="header-right" id="header-meta">
+        <span class="meta-item" id="last-updated">Loading...</span>
+        <span class="meta-item refresh-note">Auto-refreshes every {{ (refresh_interval // 60) }} min</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- SUMMARY CARDS -->
+    <section class="summary-grid" id="summary-cards">
+      <div class="card summary-card">
+        <div class="card-value" id="n-venues">—</div>
+        <div class="card-label">Venues</div>
+      </div>
+      <div class="card summary-card">
+        <div class="card-value" id="n-races">—</div>
+        <div class="card-label">Races</div>
+      </div>
+      <div class="card summary-card accent-green">
+        <div class="card-value" id="strong-picks">—</div>
+        <div class="card-label">Strong Picks &gt;25%</div>
+      </div>
+      <div class="card summary-card accent-amber">
+        <div class="card-value" id="avg-win-prob">—</div>
+        <div class="card-label">Avg Top Win Prob</div>
+      </div>
+    </section>
+
+    <!-- P&L RESULTS (shown only if results available) -->
+    <section class="card pnl-section hidden" id="pnl-section">
+      <h2 class="section-title">Today's Results</h2>
+      <div class="pnl-grid">
+        <div class="pnl-item">
+          <div class="pnl-value" id="hit-rate">—</div>
+          <div class="pnl-label">Hit Rate</div>
+        </div>
+        <div class="pnl-item">
+          <div class="pnl-value" id="place-rate">—</div>
+          <div class="pnl-label">Place Rate</div>
+        </div>
+        <div class="pnl-item">
+          <div class="pnl-value" id="top4-acc">—</div>
+          <div class="pnl-label">Top-4 Accuracy</div>
+        </div>
+        <div class="pnl-item">
+          <div class="pnl-value pnl-money" id="net-pnl">—</div>
+          <div class="pnl-label">Net P&amp;L (AUD)</div>
+        </div>
+        <div class="pnl-item">
+          <div class="pnl-value" id="roi-pct">—</div>
+          <div class="pnl-label">ROI</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NO DATA MESSAGE -->
+    <div class="no-data hidden" id="no-data-msg">
+      <p>No picks available for {{ date }}.</p>
+      <p>Run <code>python run_pipeline.py --date {{ date }}</code> to generate predictions.</p>
+    </div>
+
+    <!-- VENUES + RACES -->
+    <section id="venues-container">
+      <!-- Populated by JS -->
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      For informational purposes only &bull; Greyhound racing involves risk &bull; Bet responsibly
+    </div>
+  </footer>
+
+<script>
+// ── Utility ─────────────────────────────────────────────────────────────────
+function el(id) { return document.getElementById(id); }
+
+function pct(val) {
+  if (val === null || val === undefined) return '—';
+  return val.toFixed(1) + '%';
+}
+
+function rankColour(rank) {
+  if (rank === 1) return '#22c55e';
+  if (rank === 2) return '#f59e0b';
+  return '#6b7280';
+}
+
+function rankLabel(rank) {
+  return ['1st', '2nd', '3rd', '4th'][rank - 1] || rank;
+}
+
+// ── Score bar ────────────────────────────────────────────────────────────────
+function scoreBar(val, colour) {
+  const pct = val !== null ? Math.min(100, Math.max(0, val * 100)).toFixed(1) : 0;
+  return `<div class="score-bar-bg">
+    <div class="score-bar-fill" style="width:${pct}%;background:${colour};"></div>
+  </div>`;
+}
+
+// ── Build runner row ─────────────────────────────────────────────────────────
+function buildRunnerRow(r) {
+  const colour = rankColour(r.rank);
+  const wp = r.win_prob !== null ? r.win_prob.toFixed(1) + '%' : '—';
+  const odds = r.implied_odds !== null ? '$' + r.implied_odds.toFixed(1) : '—';
+  const comp = r.composite !== null ? r.composite.toFixed(3) : '—';
+  return `
+    <div class="runner-row">
+      <span class="rank-dot" style="background:${colour};">${r.rank}</span>
+      <span class="box-num">B${r.box}</span>
+      <span class="dog-name">${r.dog_name}</span>
+      <span class="score-bar-wrap">${scoreBar(r.composite, colour)}</span>
+      <span class="composite-val">${comp}</span>
+      <span class="win-prob" style="color:${colour};">${wp}</span>
+      <span class="implied-odds">${odds}</span>
+    </div>`;
+}
+
+// ── Build race card ──────────────────────────────────────────────────────────
+function buildRaceCard(race) {
+  const runners = race.runners.map(buildRunnerRow).join('');
+  return `
+    <div class="race-card">
+      <div class="race-header">
+        <span class="race-num">R${race.race_number}</span>
+        <span class="race-time">${race.race_time}</span>
+        <span class="race-dist">${race.distance}</span>
+        <span class="race-grade">${race.grade}</span>
+        <span class="race-name-text">${race.race_name}</span>
+      </div>
+      <div class="runner-table-header">
+        <span></span><span></span>
+        <span>Dog</span>
+        <span>Score</span>
+        <span></span>
+        <span>Win%</span>
+        <span>Odds</span>
+      </div>
+      ${runners}
+    </div>`;
+}
+
+// ── Build venue section ──────────────────────────────────────────────────────
+function buildVenueSection(venue) {
+  const stateStr = venue.state ? ` (${venue.state})` : '';
+  const races = venue.races.map(buildRaceCard).join('');
+  const venueId = 'venue-' + venue.venue.replace(/\s+/g, '-').toLowerCase();
+  return `
+    <div class="venue-section">
+      <div class="venue-header" onclick="toggleVenue('${venueId}')">
+        <span class="venue-name">${venue.venue}${stateStr}</span>
+        <span class="venue-count">${venue.races.length} race${venue.races.length !== 1 ? 's' : ''}</span>
+        <span class="venue-chevron" id="${venueId}-chevron">▼</span>
+      </div>
+      <div class="venue-races" id="${venueId}">
+        ${races}
+      </div>
+    </div>`;
+}
+
+// ── Toggle venue accordion ───────────────────────────────────────────────────
+function toggleVenue(id) {
+  const el = document.getElementById(id);
+  const chevron = document.getElementById(id + '-chevron');
+  if (el.classList.contains('collapsed')) {
+    el.classList.remove('collapsed');
+    chevron.textContent = '▼';
+  } else {
+    el.classList.add('collapsed');
+    chevron.textContent = '▶';
+  }
+}
+
+// ── Load summary ─────────────────────────────────────────────────────────────
+async function loadSummary() {
+  try {
+    const res = await fetch('/api/summary');
+    const data = await res.json();
+
+    el('n-venues').textContent = data.n_venues ?? '—';
+    el('n-races').textContent = data.n_races ?? '—';
+    el('strong-picks').textContent = data.strong_picks ?? '—';
+    el('avg-win-prob').textContent = data.avg_top_win_prob !== undefined
+      ? data.avg_top_win_prob.toFixed(1) + '%' : '—';
+    el('last-updated').textContent = 'Last updated: ' + (data.last_updated ?? '—');
+
+    if (data.pnl) {
+      const p = data.pnl;
+      el('hit-rate').textContent = pct(p.hit_rate);
+      el('place-rate').textContent = pct(p.place_rate);
+      el('top4-acc').textContent = pct(p.top4_accuracy);
+      const pnlEl = el('net-pnl');
+      pnlEl.textContent = '$' + p.net_pnl.toFixed(2);
+      pnlEl.style.color = p.net_pnl >= 0 ? '#22c55e' : '#ef4444';
+      el('roi-pct').textContent = (p.roi_pct >= 0 ? '+' : '') + p.roi_pct.toFixed(1) + '%';
+      el('pnl-section').classList.remove('hidden');
+    }
+  } catch (e) {
+    console.error('Failed to load summary:', e);
+  }
+}
+
+// ── Load picks ───────────────────────────────────────────────────────────────
+async function loadPicks() {
+  try {
+    const res = await fetch('/api/picks');
+    const venues = await res.json();
+
+    const container = el('venues-container');
+    if (!venues || venues.length === 0) {
+      el('no-data-msg').classList.remove('hidden');
+      return;
+    }
+
+    container.innerHTML = venues.map(buildVenueSection).join('');
+  } catch (e) {
+    console.error('Failed to load picks:', e);
+    el('no-data-msg').classList.remove('hidden');
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+loadSummary();
+loadPicks();
+</script>
+
+</body>
+</html>
