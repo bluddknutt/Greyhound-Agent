@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Greyhound Assistant</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header>
+    <h1>Greyhound Assistant</h1>
+    <p class="sub">Private prediction tool · mobile first</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Run Predictions</h2>
+      <label>Source
+        <select id="source">
+          <option value="csv">CSV</option>
+          <option value="tab">TAB API</option>
+          <option value="scrape">Scrape thedogs.com.au</option>
+        </select>
+      </label>
+      <label>Date
+        <input id="date" type="date" />
+      </label>
+      <label>Venue (optional)
+        <input id="venue" type="text" placeholder="HEA / Angle Park" />
+      </label>
+      <label>CSV directory (optional)
+        <input id="csv_dir" type="text" placeholder="./race_data/" />
+      </label>
+      <label class="check"><input id="dry_run" type="checkbox" /> Dry run (no output files)</label>
+      <button id="runBtn">Run model</button>
+      <p id="status"></p>
+      <p class="warn">TAB API can fail outside Australia (IP-restricted).</p>
+    </section>
+
+    <section class="card">
+      <div class="tabs">
+        <button class="tab active" data-tab="results">Results</button>
+        <button class="tab" data-tab="bets">Selected Bets</button>
+        <button class="tab" data-tab="history">History</button>
+      </div>
+      <div id="results" class="pane"></div>
+      <div id="bets" class="pane hidden"></div>
+      <div id="history" class="pane hidden"></div>
+    </section>
+  </main>
+
+<script>
+const byId = (id) => document.getElementById(id);
+
+function renderPredictions(predictions) {
+  if (!predictions?.length) return '<p>No predictions yet.</p>';
+  return predictions.map(race => `
+    <div class="race">
+      <h3>${race.venue} · Race ${race.race_number}</h3>
+      <div class="rows">
+        ${race.runners.map(r => `
+          <div class="row">
+            <span>#${r.rank} B${r.box ?? '-'}</span>
+            <span>${r.dog_name}</span>
+            <span>${(r.model_prob * 100).toFixed(1)}%</span>
+            <span>${r.final_score.toFixed(2)}</span>
+            <span>${r.odds ? '$'+r.odds.toFixed(2) : 'N/A'}</span>
+            <span>${r.overlay_pct ? r.overlay_pct.toFixed(1)+'%' : 'N/A'}</span>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function renderBets(bets) {
+  if (!bets?.length) return '<p>No value bets selected.</p>';
+  return bets.map(b => `<div class="bet">R${b.race_number} ${b.venue} · Box ${b.box} ${b.dog_name} · ${(b.model_prob*100).toFixed(1)}% · ${b.odds ? '$'+b.odds.toFixed(2) : 'N/A'} · ${b.overlay_pct ? b.overlay_pct.toFixed(1)+'%' : 'N/A'}</div>`).join('');
+}
+
+function renderHistory(history, perf) {
+  const perfCard = `<div class="perf">Total bets: ${perf.total_bets} · Strike: ${(perf.strike_rate*100).toFixed(1)}% · ROI: ${(perf.roi*100).toFixed(1)}% · P/L: ${perf.profit_loss.toFixed(2)}</div>`;
+  if (!history?.length) return perfCard + '<p>No historical runs yet.</p>';
+  return perfCard + history.map(h => `<div class="hist">#${h.run_id} ${h.run_date} ${h.source} ${h.status} · races:${h.summary.races ?? 0} bets:${h.summary.bets ?? 0}</div>`).join('');
+}
+
+async function loadLatest() {
+  const res = await fetch('/results/latest');
+  const data = await res.json();
+  if (!data.result) return;
+  byId('results').innerHTML = renderPredictions(data.result.predictions);
+  byId('bets').innerHTML = renderBets(data.result.selected_bets);
+}
+
+async function loadHistory() {
+  const res = await fetch('/results/history');
+  const data = await res.json();
+  byId('history').innerHTML = renderHistory(data.history, data.performance);
+}
+
+byId('runBtn').onclick = async () => {
+  byId('status').textContent = 'Running...';
+  const payload = {
+    source: byId('source').value,
+    date: byId('date').value || null,
+    venue: byId('venue').value || null,
+    csv_dir: byId('csv_dir').value || './race_data/',
+    dry_run: byId('dry_run').checked,
+  };
+  const res = await fetch('/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  const data = await res.json();
+  if (!data.ok) {
+    byId('status').textContent = 'Run failed: ' + data.error;
+    await loadHistory();
+    return;
+  }
+  byId('status').textContent = `Done. ${data.result.summary.races} races, ${data.result.summary.bets} bets.`;
+  byId('results').innerHTML = renderPredictions(data.result.predictions);
+  byId('bets').innerHTML = renderBets(data.result.selected_bets);
+  await loadHistory();
+};
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p => p.classList.add('hidden'));
+    btn.classList.add('active');
+    byId(btn.dataset.tab).classList.remove('hidden');
+  }
+});
+
+const today = new Date().toISOString().slice(0,10);
+byId('date').value = today;
+loadLatest();
+loadHistory();
+</script>
+</body>
+</html>
