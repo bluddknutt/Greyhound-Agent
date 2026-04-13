@@ -1,74 +1,173 @@
-# Greyhound Analytics Pipeline
+# Greyhound-Agent
 
-Automated parsing and scoring of greyhound racing forms.
+Mobile-first private betting assistant built around the existing TAB pipeline.
 
-## Features
-- PDF-to-text ingestion
-- Race form parsing
-- Trainer matching
-- Feature scoring
-- Top pick selection
+## Repo Audit (current active entry points)
 
-## Usage
-1. Place your `.txt` form file in the `data/` folder.
-2. Run `main.py`
-3. Check results in `outputs/`
+### Active now
+- `run_tab_pipeline.py` — **primary** multi-source prediction pipeline (`csv`, `tab`, `scrape`).
+- `webapp/app.py` — Flask API + mobile web UI wrapper for the pipeline.
+- `main.py` — legacy PDF parser/scorer flow (kept for compatibility).
+- `dashboard/app.py` — older read-only dashboard for `outputs/picks_{date}.csv`.
 
-## Output Files
-- `todays_form.csv`: Parsed race data
-- `ranked.csv`: Scored dogs
-- `picks.csv`: Top 5 betting picks
+### Notes from audit
+- Existing TAB logic already handled feature engineering (74 features), venue-model inference + fallback, and bet selection.
+- README was outdated and described only the old PDF flow.
+- Pipeline was CLI-only, with no structured API/service layer.
+- No persistent run history existed for app workflows.
 
-## Project Structure
+---
 
-This repo consolidates three previously separate projects:
-- **greyhound-modelling** — FastTrack GRV API client + comprehensive test suite
-- **predictive-models** — thedogs.com.au scrapers + 8-component prediction engine
+## What changed
 
-```
-Greyhound-Agent/
-├── main.py                          # PDF pipeline entry point
-├── run_daily.py                     # Scheduler wrapper
-├── requirements.txt                 # All dependencies
-├── data/                            # PDF race form inputs
-├── outputs/                         # CSV/Excel outputs
-├── src/
-│   ├── config.py                    # Scoring weights and thresholds
-│   ├── parser.py                    # PDF form parser (regex-based)
-│   ├── extract.py                   # PDF text extraction (pdfplumber)
-│   ├── features.py                  # Feature engineering for PDF pipeline
-│   ├── scorer.py                    # 8-component prediction engine (scraper pipeline)
-│   ├── exporter.py                  # Excel export
-│   ├── utils.py                     # Utilities (dir setup, file finding)
-│   ├── diagnostic.py                # PDF structure diagnostics
-│   ├── data/
-│   │   ├── fasttrack.py             # FastTrack GRV API client (XML)
-│   │   ├── fasttrack_dataset.py     # Monthly batch loader with CSV cache
-│   │   └── mapping.py               # Australian + NZ track codes lookup
-│   └── scrapers/
-│       ├── scrape_form_guide.py     # Scrape thedogs.com.au form guide
-│       └── scrape_detailed_form.py  # Scrape per-runner detailed form + box history
-└── tests/
-    ├── conftest.py                  # sys.path setup for test discovery
-    ├── test_fasttrack.py            # FastTrack API client tests (~30 tests)
-    ├── test_fasttrack_dataset.py    # Dataset loader tests (~15 tests)
-    ├── test_mapping.py              # Track code data integrity tests (~12 tests)
-    ├── test_parser.py               # PDF parser tests
-    ├── test_exporter.py             # Excel exporter tests
-    └── test_scorer.py               # Scorer pure-function tests
+### 1) Pipeline stabilized + wrapped (without changing methodology)
+- Added `src/tab_pipeline_service.py` with reusable service functions:
+  - `run_pipeline(PipelineOptions)`
+  - model loading
+  - fallback scoring
+  - structured run payloads
+- Kept `run_tab_pipeline.py` as CLI entry point.
+- Preserved existing model logic and bet selection; only refactored orchestration.
+
+### 2) Flask backend API added
+`webapp/app.py` now provides:
+- `GET /health`
+- `POST /run`
+- `GET /results/latest`
+- `GET /results/history`
+- `GET /races/<date>`
+- `GET /` (mobile web UI)
+
+`POST /run` request body:
+```json
+{
+  "source": "csv|tab|scrape",
+  "date": "YYYY-MM-DD",
+  "venue": "optional",
+  "csv_dir": "optional",
+  "dry_run": false
+}
 ```
 
-### Three Data Pipelines
+### 3) Mobile-first frontend added
+- New UI in `webapp/templates/index.html` + `webapp/static/app.css`.
+- Includes:
+  - source selector
+  - date picker
+  - venue filter
+  - run button
+  - results tab
+  - selected bets tab
+  - history tab
+- Explicit warning that TAB source can be AU-IP-restricted.
 
-| Pipeline | Input | Entry Point | Scorer |
-|----------|-------|-------------|--------|
-| **PDF** | Race form PDFs in `data/` | `main.py` | `src/features.py compute_features()` |
-| **FastTrack API** | GRV official API (requires key in `.env`) | `src/data/fasttrack_dataset.py` | — |
-| **Web scraper** | thedogs.com.au (live) | `src/scrapers/scrape_detailed_form.py` | `src/scorer.py predict()` |
+### 4) Result tracking added
+- Added SQLite store `src/results_store.py`.
+- Persists:
+  - each run payload/status
+  - selected bets (stake/odds/overlay/outcome fields)
+- Exposes performance summary:
+  - total bets
+  - strike rate
+  - ROI
+  - profit/loss
 
-### Running Tests
+### 5) Testing
+- Added backend route tests: `tests/test_web_app.py`.
 
+---
+
+## Local run instructions (exact)
+
+### 1) Install dependencies
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-pytest tests/ -v
+```
+
+### 2) Run CLI pipeline (unchanged)
+```bash
+python run_tab_pipeline.py --source csv --csv-dir ./race_data/ --date 2026-04-13
+```
+
+### 3) Run web app
+```bash
+export FLASK_APP=webapp.app
+flask run --host 0.0.0.0 --port 5000
+```
+Open from phone on same network:
+- `http://<your-computer-lan-ip>:5000`
+
+### 4) API quick checks
+```bash
+curl http://127.0.0.1:5000/health
+curl http://127.0.0.1:5000/results/latest
+curl -X POST http://127.0.0.1:5000/run -H 'Content-Type: application/json' -d '{"source":"csv","date":"2026-04-13","csv_dir":"./race_data/"}'
+```
+
+---
+
+## Deployment path
+
+### Option A: Render (recommended simple path)
+1. Push repo to GitHub.
+2. Create **Web Service** on Render.
+3. Build command:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Start command:
+   ```bash
+   gunicorn webapp.app:app --bind 0.0.0.0:$PORT
+   ```
+5. Add environment variables from `.env.example` as needed.
+6. Deploy.
+
+### Option B: Railway
+1. New project from GitHub repo.
+2. Set start command:
+   ```bash
+   gunicorn webapp.app:app --bind 0.0.0.0:$PORT
+   ```
+3. Add env vars.
+4. Deploy.
+
+### Option C: Replit
+1. Import GitHub repo.
+2. Install deps.
+3. Run:
+   ```bash
+   python -m flask --app webapp.app run --host 0.0.0.0 --port 5000
+   ```
+
+---
+
+## Important assumptions / constraints
+- `tab` source may fail outside Australian IP ranges (TAB access limits).
+- `scrape` source depends on thedogs.com.au availability/layout stability.
+- Outcome settlement is schema-ready (`bets.outcome`, `return_amount`) but still requires result ingestion wiring from `scripts/fetch_results.py` if full auto-settlement is desired.
+- Existing legacy flows (`main.py`, `dashboard/app.py`) are preserved.
+
+---
+
+## Project structure (updated)
+
+```text
+Greyhound-Agent/
+├── run_tab_pipeline.py            # CLI runner (kept)
+├── webapp/
+│   ├── app.py                     # Flask API + web UI server
+│   ├── templates/index.html       # Mobile-first frontend
+│   └── static/app.css             # Styles
+├── src/
+│   ├── tab_pipeline_service.py    # Pipeline service wrapper
+│   ├── results_store.py           # SQLite run/bet persistence
+│   ├── tab_feature_engineer.py    # 74-feature engineering
+│   ├── bet_selector.py            # Value bet selection
+│   └── ...
+├── tests/
+│   ├── test_tab_pipeline.py
+│   └── test_web_app.py            # New API tests
+└── .env.example
 ```
