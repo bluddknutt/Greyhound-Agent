@@ -306,6 +306,26 @@ class TestTabFeatureEngineer:
         assert 0 < _generic_box_advantage(8, 500) <= 1.0
         assert _generic_box_advantage(1, 300) > _generic_box_advantage(6, 300)
 
+    def test_prefers_tab_career_and_prize_money_fields(self):
+        """TAB-specific career fields should override derived form stats."""
+        raw_df = self._make_raw_df()
+
+        # Inject TAB-shaped fields on the most recent run for DOG_A.
+        dog_a_latest = (raw_df["dog_name"] == "DOG_A") & (raw_df["run_sequence"] == 1)
+        raw_df.loc[dog_a_latest, "_career_wins"] = "12"
+        raw_df.loc[dog_a_latest, "_career_places"] = "27"
+        raw_df.loc[dog_a_latest, "_career_starts"] = "40"
+        raw_df.loc[dog_a_latest, "_prize_money"] = "15325.50"
+        raw_df.loc[dog_a_latest, "_last5_starts"] = "128x4"
+
+        result = engineer_features(raw_df)
+        dog_a = result[result["_dog_name"] == "DOG_A"].iloc[0]
+
+        assert dog_a["CareerWins"] == 12.0
+        assert dog_a["CareerPlaces"] == 27.0
+        assert dog_a["CareerStarts"] == 40.0
+        assert dog_a["PrizeMoney"] == 15325.50
+
     def test_engineered_odds_enable_overlay_selection(self):
         """TAB odds in raw rows flow through engineer_features into overlay mode."""
         raw_df = self._make_raw_df()
