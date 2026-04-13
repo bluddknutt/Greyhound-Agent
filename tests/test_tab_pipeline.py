@@ -365,6 +365,13 @@ class TestModelPrediction:
         # Probabilities should sum to ~1 within the race
         assert abs(result["model_prob"].sum() - 1.0) < 0.01
 
+    def test_resolve_model_prefix_handles_tab_name_variant(self):
+        """TAB-style venue variants resolve to the correct model prefix."""
+        from run_tab_pipeline import _resolve_model_prefix
+
+        assert _resolve_model_prefix("Angle Park (SA)") == "Angle Park"
+        assert _resolve_model_prefix("Some Different Name", venue_mnemonic="AP") == "Angle Park"
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TestBetSelector
