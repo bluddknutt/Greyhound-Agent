@@ -240,17 +240,35 @@ def engineer_features(df):
         sps = group["sp"].apply(lambda x: _safe_num(x, np.nan)).dropna().tolist()
         weights = group["weight"].apply(lambda x: _safe_num(x, np.nan)).dropna().tolist()
 
-        # Parse placings from PIR or PLC
+        # Parse placings from PIR
         placings = []
         for _, run in group.iterrows():
             pir_positions = _parse_pir(run.get("pir", ""))
             if pir_positions:
                 placings.append(pir_positions[-1])  # final position
 
-        # Career stats (estimated from form data)
-        career_starts = max(n_runs, 1)
-        career_wins = sum(1 for p in placings if p == 1)
-        career_places = sum(1 for p in placings if p <= 3)
+        # TAB form payloads can include a compact last-5 string on the
+        # current runner row. Use it as a fallback signal when PIR history
+        # is not present on grouped rows.
+        tab_last5_raw = first_run.get("_last5_starts")
+        tab_last5_positions = _parse_last_starts(tab_last5_raw)
+        if not placings and tab_last5_positions:
+            placings = tab_last5_positions
+
+        # Career stats: prefer TAB-provided values when present, otherwise
+        # estimate from grouped historical form data.
+        tab_career_wins = _safe_num(first_run.get("_career_wins"), np.nan)
+        tab_career_places = _safe_num(first_run.get("_career_places"), np.nan)
+        tab_career_starts = _safe_num(first_run.get("_career_starts"), np.nan)
+        tab_prize_money = _safe_num(first_run.get("_prize_money"), np.nan)
+
+        derived_career_starts = max(n_runs, 1)
+        derived_career_wins = sum(1 for p in placings if p == 1)
+        derived_career_places = sum(1 for p in placings if p <= 3)
+
+        career_wins = tab_career_wins if pd.notna(tab_career_wins) else derived_career_wins
+        career_places = tab_career_places if pd.notna(tab_career_places) else derived_career_places
+        career_starts = tab_career_starts if pd.notna(tab_career_starts) else derived_career_starts
 
         # Best time
         best_time = min(times) if times else _estimate_time(distance)
@@ -275,7 +293,7 @@ def engineer_features(df):
             else:
                 dlw = dlr + 60
 
-        prize_money = 0.0  # not available from CSV, default
+        prize_money = tab_prize_money if pd.notna(tab_prize_money) else 0.0
 
         # RTC (runs to complete — estimated from career)
         rtc = career_starts
