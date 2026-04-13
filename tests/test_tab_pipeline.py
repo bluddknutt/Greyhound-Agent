@@ -306,6 +306,42 @@ class TestTabFeatureEngineer:
         assert 0 < _generic_box_advantage(8, 500) <= 1.0
         assert _generic_box_advantage(1, 300) > _generic_box_advantage(6, 300)
 
+    def test_engineered_odds_enable_overlay_selection(self):
+        """TAB odds in raw rows flow through engineer_features into overlay mode."""
+        raw_df = self._make_raw_df()
+
+        # Most recent run for DOG_A: TAB _odds should be used directly.
+        raw_df.loc[(raw_df["dog_name"] == "DOG_A") & (raw_df["run_sequence"] == 1), "_odds"] = 5.5
+        # Most recent run for DOG_B: fallback to SP when _odds missing.
+        raw_df.loc[(raw_df["dog_name"] == "DOG_B") & (raw_df["run_sequence"] == 1), "sp"] = 7.0
+        # DOG_C: neither available => remains NaN.
+        raw_df.loc[(raw_df["dog_name"] == "DOG_C") & (raw_df["run_sequence"] == 1), ["_odds", "sp"]] = np.nan
+
+        engineered = engineer_features(raw_df)
+
+        # Verify odds extraction behavior from most-recent grouped row.
+        dog_a = engineered[engineered["_dog_name"] == "DOG_A"].iloc[0]
+        dog_b = engineered[engineered["_dog_name"] == "DOG_B"].iloc[0]
+        dog_c = engineered[engineered["_dog_name"] == "DOG_C"].iloc[0]
+        assert dog_a["_odds"] == pytest.approx(5.5)
+        assert dog_b["_odds"] == pytest.approx(7.0)
+        assert pd.isna(dog_c["_odds"])
+
+        # Add model probabilities and run bet selection.
+        preds = engineered[["_dog_name", "_venue", "_race_number", "_dog_number", "_odds"]].copy()
+        preds["model_prob"] = preds["_dog_name"].map({
+            "DOG_A": 0.20,  # 10% overlay at 5.5 odds
+            "DOG_B": 0.30,  # 110% overlay at 7.0 odds (best)
+            "DOG_C": 0.50,  # no odds, ignored in overlay mode
+        })
+
+        picks = select_bets(preds, {"tracking": {"min_overlay_pct": 10}})
+        assert len(picks) == 1
+        pick = picks[0]
+        assert pick["dog_name"] == "DOG_B"
+        assert pick["odds"] == pytest.approx(7.0)
+        assert pick["overlay_pct"] == pytest.approx(110.0)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TestModelPrediction

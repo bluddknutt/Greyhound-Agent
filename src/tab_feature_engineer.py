@@ -224,6 +224,9 @@ def engineer_features(df):
         group = group.sort_values("run_sequence")
         n_runs = len(group)
         first_run = group.iloc[0]  # most recent run
+        odds_val = _safe_num(first_run.get("_odds"), np.nan)
+        if pd.isna(odds_val):
+            odds_val = _safe_num(first_run.get("sp"), np.nan)
 
         # ── Tier 1: Direct fields ────────────────────────────────────
         box = _safe_num(first_run.get("box"), 5)
@@ -519,7 +522,7 @@ def engineer_features(df):
             "_race_number": race_num,
             "_dog_number": dog_num,
             "_grade": grade,
-            "_odds": np.nan,  # populated from TAB API if available
+            "_odds": odds_val,
         }
 
         records.append(feat)
