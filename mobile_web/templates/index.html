@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Greyhound Mobile</title>
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Greyhound" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/static/icon.svg" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Greyhound-Agent</p>
+        <h1>Greyhound Mobile</h1>
+      </div>
+      <div class="topbar-actions">
+        <button id="installBtn" class="ghost hidden" type="button">Install</button>
+        <button id="refreshBtn" class="ghost" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Run predictions</h2>
+            <p class="muted">Phone-friendly runner for the TAB pipeline.</p>
+          </div>
+          <span id="statusPill" class="pill idle">Ready</span>
+        </div>
+
+        <form id="runForm" class="stack">
+          <div class="field">
+            <label>Source</label>
+            <div class="segmented" id="sourceGroup">
+              <button type="button" class="segment active" data-source="csv">CSV</button>
+              <button type="button" class="segment" data-source="tab">TAB API</button>
+              <button type="button" class="segment" data-source="scrape">Scrape</button>
+            </div>
+            <p id="sourceNote" class="hint">Best for local files in <code>race_data/</code>.</p>
+          </div>
+
+          <div class="field">
+            <label for="date">Date</label>
+            <input id="date" name="date" type="date" value="{{ defaults.date }}" />
+            <div class="quick-actions">
+              <button type="button" class="mini" data-date-offset="0">Today</button>
+              <button type="button" class="mini" data-date-offset="1">Tomorrow</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="venue">Venue</label>
+            <input id="venue" name="venue" type="text" placeholder="Angle Park / HEA" />
+          </div>
+
+          <div class="field" id="csvDirField">
+            <label for="csv_dir">CSV folder</label>
+            <input id="csv_dir" name="csv_dir" type="text" value="{{ defaults.csv_dir }}" />
+          </div>
+
+          <label class="toggle">
+            <input id="dry_run" name="dry_run" type="checkbox" />
+            <span>Dry run</span>
+          </label>
+
+          <button id="runBtn" class="primary" type="submit">Run model</button>
+          <p id="statusText" class="status-text">No run started yet.</p>
+        </form>
+      </section>
+
+      <section class="stats-grid">
+        <article class="stat-card">
+          <span class="stat-label">Races</span>
+          <strong id="statRaces">0</strong>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Bets</span>
+          <strong id="statBets">0</strong>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Staked</span>
+          <strong id="statStaked">$0.00</strong>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">ROI</span>
+          <strong id="statRoi">0.0%</strong>
+        </article>
+      </section>
+
+      <section class="panel">
+        <nav class="tabs" aria-label="Results views">
+          <button class="tab active" type="button" data-tab="bets">Bets</button>
+          <button class="tab" type="button" data-tab="races">Races</button>
+          <button class="tab" type="button" data-tab="history">History</button>
+        </nav>
+
+        <section id="bets" class="tab-panel"></section>
+        <section id="races" class="tab-panel hidden"></section>
+        <section id="history" class="tab-panel hidden"></section>
+      </section>
+    </main>
+  </div>
+
+  <template id="emptyStateTemplate">
+    <article class="empty-state">
+      <h3>Nothing to show yet</h3>
+      <p>Run the model to load predictions and value bets.</p>
+    </article>
+  </template>
+
+  <script>
+    window.APP_DEFAULTS = {{ defaults | tojson }};
+  </script>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
