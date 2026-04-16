@@ -12,6 +12,7 @@ import logging
 
 from src.tab_pipeline_service import (
     PipelineOptions,
+    _resolve_model_prefix,
     apply_composite_fallback,
     load_venue_models,
     predict_with_models,

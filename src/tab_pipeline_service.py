@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import re
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,7 +21,7 @@ import pandas as pd
 from src.bet_selector import format_picks_json, select_bets
 from src.config_loader import load_config
 from src.data.csv_ingest import load_meeting_csvs
-from src.data.tab_api import fetch_all_races
+from src.data.tab_api import VENUE_MNEMONIC_TO_MODEL, fetch_all_races
 from src.scrapers.thedogs_scraper import scrape_print_hub
 from src.tab_feature_engineer import MODEL_FEATURES, engineer_features
 
@@ -30,16 +31,54 @@ _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VENUE_MODEL_NAMES = {
     "Angle Park": "Angle Park",
     "angle park": "Angle Park",
+    "ANGLE PARK": "Angle Park",
+    "Angle Pk": "Angle Park",
+    "ANGLE PK": "Angle Park",
+    "Angle Park SA": "Angle Park",
+    "ANGLE PARK SA": "Angle Park",
+    "Angle Park (SA)": "Angle Park",
     "AP": "Angle Park",
     "BALLARAT": "BALLARAT",
     "Ballarat": "BALLARAT",
     "ballarat": "BALLARAT",
+    "Ballarat VIC": "BALLARAT",
+    "Ballarat (VIC)": "BALLARAT",
     "BAL": "BALLARAT",
     "BENDIGO": "BENDIGO",
     "Bendigo": "BENDIGO",
     "bendigo": "BENDIGO",
+    "Bendigo VIC": "BENDIGO",
+    "Bendigo (VIC)": "BENDIGO",
     "BEN": "BENDIGO",
 }
+
+
+def _normalize_venue_name(name: str) -> str:
+    """Normalise venue names for robust lookup (TAB/csv formatting variants)."""
+    if not name:
+        return ""
+    normalized = str(name).upper()
+    normalized = re.sub(r"\([^)]*\)", " ", normalized)
+    normalized = re.sub(r"[^A-Z0-9]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+_NORMALIZED_VENUE_MODEL_NAMES = {
+    _normalize_venue_name(key): value for key, value in VENUE_MODEL_NAMES.items()
+}
+_NORMALIZED_MNEMONIC_TO_MODEL = {
+    _normalize_venue_name(key): value for key, value in VENUE_MNEMONIC_TO_MODEL.items()
+}
+
+
+def _resolve_model_prefix(venue_name: str, venue_mnemonic: str | None = None) -> str | None:
+    """Resolve model prefix from venue name and optional TAB track mnemonic."""
+    if venue_mnemonic:
+        model_prefix = _NORMALIZED_MNEMONIC_TO_MODEL.get(_normalize_venue_name(venue_mnemonic))
+        if model_prefix:
+            return model_prefix
+    return _NORMALIZED_VENUE_MODEL_NAMES.get(_normalize_venue_name(venue_name))
 
 
 @dataclass
@@ -55,17 +94,12 @@ def resolve_date(date_str: str | None) -> str:
     return date_str or datetime.now(AEST).strftime("%Y-%m-%d")
 
 
-def load_venue_models(venue_name: str):
+def load_venue_models(venue_name: str, venue_mnemonic: str | None = None):
     """Load pkl models for a venue.
 
     Returns (gb_model, rf_model, scaler) or None if not available.
     """
-    model_prefix = VENUE_MODEL_NAMES.get(venue_name)
-    if not model_prefix:
-        for key, val in VENUE_MODEL_NAMES.items():
-            if key.lower() == venue_name.lower():
-                model_prefix = val
-                break
+    model_prefix = _resolve_model_prefix(venue_name, venue_mnemonic=venue_mnemonic)
 
     if not model_prefix:
         return None
@@ -115,7 +149,12 @@ def predict_with_models(features_df: pd.DataFrame) -> pd.DataFrame:
     for venue in venues:
         venue_mask = features_df["_venue"] == venue
         venue_df = features_df.loc[venue_mask]
-        models = load_venue_models(venue)
+        venue_mnemonic = None
+        if "_track" in venue_df.columns:
+            non_null_tracks = venue_df["_track"].dropna().astype(str).str.strip()
+            if not non_null_tracks.empty:
+                venue_mnemonic = non_null_tracks.iloc[0]
+        models = load_venue_models(venue, venue_mnemonic=venue_mnemonic)
 
         if models:
             gb, rf, scaler = models

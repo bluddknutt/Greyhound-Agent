@@ -541,6 +541,7 @@ def engineer_features(df):
             "_dog_number": dog_num,
             "_grade": grade,
             "_odds": odds_val,
+            "_track": first_run.get("track", np.nan),
         }
 
         records.append(feat)
@@ -549,7 +550,7 @@ def engineer_features(df):
 
     if features_df.empty:
         logger.warning("No feature records produced")
-        cols = MODEL_FEATURES + ["_dog_name", "_venue", "_race_number", "_dog_number", "_grade", "_odds"]
+        cols = MODEL_FEATURES + ["_dog_name", "_venue", "_race_number", "_dog_number", "_grade", "_odds", "_track"]
         return pd.DataFrame(columns=cols)
 
     # ── Compute FinalScore per runner ────────────────────────────────
