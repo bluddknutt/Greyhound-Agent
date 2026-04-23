@@ -9,8 +9,10 @@ Sources:
 
 import argparse
 import logging
+import sys
 
 from src.tab_pipeline_service import (
+    DeployBlockedError,
     PipelineOptions,
     apply_composite_fallback,
     load_venue_models,
@@ -101,7 +103,10 @@ def main():
         csv_dir=args.csv_dir,
         dry_run=args.dry_run,
     )
-    result = run_pipeline(options)
+    try:
+        result = run_pipeline(options)
+    except DeployBlockedError:
+        sys.exit(1)
     _print_results(result)
 
 
