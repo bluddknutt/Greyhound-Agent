@@ -7,9 +7,12 @@ CLI runners and web/API callers.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pickle
+import sys
 import warnings
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -40,6 +43,106 @@ VENUE_MODEL_NAMES = {
     "bendigo": "BENDIGO",
     "BEN": "BENDIGO",
 }
+
+logger = logging.getLogger(__name__)
+
+
+class DeployBlockedError(RuntimeError):
+    """Raised when the deploy guard detects unsafe picks.
+
+    Callers that run as a CLI script should catch this and sys.exit(1).
+    Web API callers should catch this and return an appropriate error response.
+    """
+
+
+def _safe_num(val, default):
+    try:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return default
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _filter_maiden_races(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Remove maiden/ungraded races where >= 3 runners have < 3 prior starts.
+
+    Races that pass get included unchanged; filtered races are logged.
+    """
+    if raw_df.empty:
+        return raw_df
+
+    filtered_groups = []
+
+    for (venue, race_num), race_grp in raw_df.groupby(["venue", "race_number"], sort=False):
+        grade = str(race_grp["grade"].iloc[0]).strip().lower() if len(race_grp) > 0 else ""
+        is_maiden = "maiden" in grade
+        is_unknown = not grade or grade in ("nan", "none", "")
+
+        if not (is_maiden or is_unknown):
+            filtered_groups.append(race_grp)
+            continue
+
+        low_starts_count = 0
+        has_career_starts = "_career_starts" in race_grp.columns
+
+        for dog_name, dog_grp in race_grp.groupby("dog_name", sort=False):
+            if has_career_starts:
+                career_starts = int(_safe_num(dog_grp["_career_starts"].iloc[0], 0))
+            else:
+                career_starts = int(dog_grp["run_sequence"].max()) if len(dog_grp) > 0 else 0
+            if career_starts < 3:
+                low_starts_count += 1
+
+        if low_starts_count >= 3:
+            logger.info(
+                "Skipping maiden/ungraded race %s/R%s: %d runners with < 3 prior starts",
+                venue, race_num, low_starts_count,
+            )
+        else:
+            filtered_groups.append(race_grp)
+
+    if not filtered_groups:
+        return pd.DataFrame(columns=raw_df.columns)
+    return pd.concat(filtered_groups, ignore_index=True)
+
+
+def _check_deploy_guard(picks: list[dict], raw_df: pd.DataFrame) -> tuple[bool, list[str]]:
+    """Check three hard-stop conditions before writing picks to disk.
+
+    Returns (blocked, reasons). If blocked is True, DO NOT write the file.
+    """
+    reasons: list[str] = []
+
+    if picks:
+        box1_count = sum(1 for p in picks if p.get("box") == 1)
+        box1_pct = box1_count / len(picks) * 100
+        if box1_pct > 25:
+            reasons.append(
+                f"Box 1 winner pct {box1_pct:.1f}% > 25% ({box1_count}/{len(picks)} picks)"
+            )
+
+    for p in picks:
+        dog_name = str(p.get("dog_name", ""))
+        if not dog_name or dog_name.strip().lower().startswith("vacant"):
+            reasons.append(f"Vacant Box present in picks: {dog_name!r}")
+            break
+
+    if not raw_df.empty and "grade" in raw_df.columns:
+        maiden_keys: set[tuple[str, int]] = set()
+        for (venue, race_num), grp in raw_df.groupby(["venue", "race_number"], sort=False):
+            grade = str(grp["grade"].iloc[0]).lower()
+            if "maiden" in grade:
+                maiden_keys.add((str(venue), int(race_num)))
+        for p in picks:
+            key = (str(p.get("venue", "")), int(p.get("race_number", 0)))
+            if key in maiden_keys:
+                reasons.append(
+                    f"Maiden race in picks: {p.get('venue')}/R{p.get('race_number')}"
+                )
+                break
+
+    return bool(reasons), reasons
 
 
 @dataclass
@@ -192,7 +295,19 @@ def _prediction_records(predictions_df: pd.DataFrame) -> list[dict[str, Any]]:
 def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
     """Run the prediction pipeline and return structured data."""
     config = load_config()
+
+    # Paper-unlock observability stub — no paper mode detected in this branch.
+    # If paper-unlock logic exists on another branch, instrument here.
+    logger.info(
+        "paper_unlock state: paper mode not detected in this branch. "
+        "Expected counter: N/A (check claude/consolidate-repos-V1DjV if needed)"
+    )
+
     raw_df, date_str, metadata = _load_raw_data(options, config)
+
+    raw_df = _filter_maiden_races(raw_df)
+    if raw_df.empty:
+        raise RuntimeError("All races filtered out by maiden/low-info filter")
 
     features_df = engineer_features(raw_df)
     if features_df.empty:
@@ -201,11 +316,32 @@ def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
     predictions_df = predict_with_models(features_df)
     picks = select_bets(predictions_df, config)
 
+    # Debug: box distribution of winner picks
+    if picks:
+        box_dist = Counter(p.get("box") for p in picks)
+        total = len(picks)
+        dist_str = ", ".join(
+            f"Box {b}: {c}/{total} ({c / total * 100:.1f}%)"
+            for b, c in sorted(box_dist.items())
+            if b is not None
+        )
+        print(f"[DEBUG] Winner pick distribution by box: {dist_str}")
+
     n_runners = int(len(raw_df))
     n_venues = int(raw_df["venue"].nunique()) if "venue" in raw_df.columns else 0
     n_races = int(raw_df.groupby(["venue", "race_number"]).ngroups) if not raw_df.empty else 0
 
     picks_json = format_picks_json(picks, date_str, source=options.source)
+
+    # Deploy guard — must pass before any file is written
+    blocked, guard_reasons = _check_deploy_guard(picks, raw_df)
+    if blocked:
+        reason_str = "; ".join(guard_reasons)
+        print(
+            f"DEPLOY BLOCKED: {reason_str}. "
+            "Picks NOT written. Frontend will keep showing yesterday's."
+        )
+        raise DeployBlockedError(reason_str)
 
     output_paths = {}
     if not options.dry_run:
