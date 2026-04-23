@@ -232,7 +232,15 @@ def fetch_race(date_str, venue_mnemonic, race_number):
         if r.get("scratched", False):
             continue
 
+        # Skip vacant/empty runners at parse time
         runner_name = r.get("runnerName", "")
+        if not runner_name or str(runner_name).strip().lower().startswith("vacant"):
+            logger.info(
+                "Skipping vacant/empty runner at barrier %s in race %s/%s",
+                r.get("barrierNumber", "?"), venue_mnemonic, race_number,
+            )
+            continue
+
         runner_number = r.get("runnerNumber", 0)
         barrier = r.get("barrierNumber", runner_number)
         trainer = r.get("trainerName", r.get("trainerFullName", ""))
@@ -265,6 +273,13 @@ def fetch_race(date_str, venue_mnemonic, race_number):
             "prizeMoney": _extract_stat(stats, ["prizemoney", "prizeMoney", "totalPrizeMoney"]),
             "weight": _extract_stat(stats, ["weight", "handicapWeight"]),
         })
+
+    if len(runners) < 5:
+        logger.warning(
+            "Race %s/%s: skipped: insufficient runners (%d valid after vacant/scratched filter)",
+            venue_mnemonic, race_number, len(runners),
+        )
+        return None
 
     return {
         "race_number": race_number,

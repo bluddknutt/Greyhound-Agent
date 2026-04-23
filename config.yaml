@@ -9,7 +9,7 @@ scorer:
   weights:
     speed: 0.25
     form: 0.22
-    box_bias: 0.12
+    box_bias: 0.06
     class: 0.10
     early_speed: 0.10
     consistency: 0.11

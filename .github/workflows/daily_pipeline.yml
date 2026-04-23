@@ -1,0 +1,45 @@
+name: Daily Greyhound Pipeline
+
+on:
+  schedule:
+    # 07:00 AEST = 21:00 UTC (non-DST). Adjust to 20:00 UTC during AEDT (Oct-Apr).
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    # NOTE: TAB API is geo-restricted to Australian IPs.
+    # For live TAB data, replace 'ubuntu-latest' with a self-hosted runner
+    # on an Australian VPS (e.g. Hetzner AX41, Sydney region).
+    # CSV/scrape sources work on any runner.
+
+    steps:
+      - name: Echo branch and commit
+        run: |
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        id: pipeline
+        run: python run_tab_pipeline.py --source tab
+        # Exit code 1 from deploy guard → this step turns red ❌ in GitHub UI
+
+      - name: Upload latest_picks.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-picks-${{ github.run_number }}
+          path: latest_picks.json
+          if-no-files-found: warn

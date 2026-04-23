@@ -583,3 +583,63 @@ class TestTheDogsScraper:
         ]
         assert len(filtered) == 1
         assert filtered[0]["name"] == "Ballarat"
+
+
+# ── Vacant box filter tests ──────────────────────────────────────────────────
+
+class TestVacantBoxFilter:
+    """Tests for the vacant/empty runner filter in tab_api.fetch_race."""
+
+    _FULL_RACE_RUNNERS = [
+        {"runnerName": "FAST DOG", "runnerNumber": 1, "barrierNumber": 1, "scratched": False},
+        {"runnerName": "Vacant Box", "runnerNumber": 2, "barrierNumber": 2, "scratched": False},
+        {"runnerName": "GOOD RUNNER", "runnerNumber": 3, "barrierNumber": 3, "scratched": False},
+        {"runnerName": "VACANT BOX", "runnerNumber": 4, "barrierNumber": 4, "scratched": False},
+        {"runnerName": "SPEEDY PUP", "runnerNumber": 5, "barrierNumber": 5, "scratched": False},
+        {"runnerName": "FLASH STAR", "runnerNumber": 6, "barrierNumber": 6, "scratched": False},
+        {"runnerName": "THUNDER", "runnerNumber": 7, "barrierNumber": 7, "scratched": False},
+        {"runnerName": "LIGHTNING", "runnerNumber": 8, "barrierNumber": 8, "scratched": False},
+    ]
+
+    def test_vacant_boxes_dropped(self):
+        """Mock race with 2 vacants: assert they're dropped from runners list."""
+        from unittest.mock import patch
+        from src.data.tab_api import fetch_race
+
+        mock_data = {
+            "raceName": "Test Race",
+            "distance": "500",
+            "raceClassConditions": "Grade 5",
+            "runners": self._FULL_RACE_RUNNERS,
+        }
+        with patch("src.data.tab_api._api_get", return_value=mock_data), \
+             patch("src.data.tab_api.time.sleep"):
+            result = fetch_race("2026-04-23", "HEA", 1)
+
+        assert result is not None
+        runner_names = [r["runnerName"] for r in result["runners"]]
+        assert "Vacant Box" not in runner_names
+        assert "VACANT BOX" not in runner_names
+        assert len(result["runners"]) == 6
+
+    def test_race_with_fewer_than_5_runners_after_filter_skipped(self):
+        """Race with < 5 valid runners after vacant filter should return None."""
+        from unittest.mock import patch
+        from src.data.tab_api import fetch_race
+
+        mock_data = {
+            "raceName": "Test Race",
+            "distance": "500",
+            "raceClassConditions": "Grade 5",
+            "runners": [
+                {"runnerName": "FAST DOG", "runnerNumber": 1, "barrierNumber": 1, "scratched": False},
+                {"runnerName": "Vacant Box", "runnerNumber": 2, "barrierNumber": 2, "scratched": False},
+                {"runnerName": "GOOD RUNNER", "runnerNumber": 3, "barrierNumber": 3, "scratched": False},
+                {"runnerName": "VACANT BOX", "runnerNumber": 4, "barrierNumber": 4, "scratched": False},
+            ],
+        }
+        with patch("src.data.tab_api._api_get", return_value=mock_data), \
+             patch("src.data.tab_api.time.sleep"):
+            result = fetch_race("2026-04-23", "HEA", 1)
+
+        assert result is None

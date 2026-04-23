@@ -332,14 +332,26 @@ def load_race_csv(filepath):
         dog_name, dog_number = _parse_dog_name(raw_name)
 
         if dog_name is not None:
-            # Save previous dog's data
-            if current_dog_name is not None and current_runs:
-                dogs.append(
-                    (current_dog_name, current_dog_number, current_runs)
-                )
-            current_dog_name = dog_name
-            current_dog_number = dog_number
-            current_runs = [row]
+            # Skip vacant/empty entries at parse time
+            if str(dog_name).strip().lower().startswith("vacant"):
+                logger.info("Skipping vacant runner '%s' in %s", dog_name, filepath)
+                # Save previous dog then reset so any continuation rows for
+                # this vacant entry are discarded rather than appended to the
+                # previous dog's form history.
+                if current_dog_name is not None and current_runs:
+                    dogs.append((current_dog_name, current_dog_number, current_runs))
+                current_dog_name = None
+                current_dog_number = None
+                current_runs = []
+            else:
+                # Save previous dog's data
+                if current_dog_name is not None and current_runs:
+                    dogs.append(
+                        (current_dog_name, current_dog_number, current_runs)
+                    )
+                current_dog_name = dog_name
+                current_dog_number = dog_number
+                current_runs = [row]
         else:
             # Continuation row
             if current_dog_name is not None:
