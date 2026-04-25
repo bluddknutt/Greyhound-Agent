@@ -572,8 +572,8 @@ class TestTheDogsScraper:
     def test_venue_filter(self):
         """Venue filter logic works correctly."""
         venues = [
-            {"name": "Ballarat", "slug": "ballarat", "downloads": {}},
-            {"name": "Bendigo", "slug": "bendigo", "downloads": {}},
+            {"name": "Ballarat", "slug": "ballarat", "race_csvs": []},
+            {"name": "Bendigo", "slug": "bendigo", "race_csvs": []},
         ]
 
         filter_lower = "ballarat"
@@ -583,3 +583,52 @@ class TestTheDogsScraper:
         ]
         assert len(filtered) == 1
         assert filtered[0]["name"] == "Ballarat"
+
+    def test_parse_print_hub_extracts_all_race_csvs(self):
+        """Parser extracts every race CSV link for the requested date."""
+        from src.scrapers.thedogs_scraper import _parse_print_hub
+
+        html = """
+        <html><body>
+            <a href="/files/Race_1_-_BAL_-_25_April_2026.csv">R1</a>
+            <a href="/files/Race_2_-_BAL_-_25_April_2026.csv">R2</a>
+            <a href="/files/Race_3_-_BEN_-_25_April_2026.csv">R3</a>
+            <a href="/files/Race_1_-_BAL_-_24_April_2026.csv">Old date</a>
+        </body></html>
+        """
+
+        venues = _parse_print_hub(html, "2026-04-25")
+        assert len(venues) == 2
+
+        by_name = {v["name"]: v for v in venues}
+        assert len(by_name["BAL"]["race_csvs"]) == 2
+        assert len(by_name["BEN"]["race_csvs"]) == 1
+
+    def test_scrape_print_hub_downloads_each_race_csv(self, monkeypatch, tmp_path):
+        """Downloader saves every race CSV link, not just one file per venue."""
+        from src.scrapers import thedogs_scraper
+
+        html = """
+        <html><body>
+            <a href="/files/Race_1_-_BAL_-_25_April_2026.csv">R1</a>
+            <a href="/files/Race_2_-_BAL_-_25_April_2026.csv">R2</a>
+        </body></html>
+        """
+
+        monkeypatch.setattr(thedogs_scraper, "_fetch_html", lambda _url: html)
+
+        created = []
+
+        def fake_download(url, dest):
+            Path(dest).parent.mkdir(parents=True, exist_ok=True)
+            Path(dest).write_text("csv")
+            created.append((url, dest))
+            return True
+
+        monkeypatch.setattr(thedogs_scraper, "download_file", fake_download)
+        monkeypatch.setattr(thedogs_scraper.time, "sleep", lambda _s: None)
+
+        result = thedogs_scraper.scrape_print_hub("2026-04-25", str(tmp_path))
+        assert "BAL" in result
+        assert len(result["BAL"]) == 2
+        assert len(created) == 2
