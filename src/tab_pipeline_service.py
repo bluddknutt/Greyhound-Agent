@@ -7,6 +7,7 @@ CLI runners and web/API callers.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pickle
 import warnings
@@ -20,12 +21,13 @@ import pandas as pd
 from src.bet_selector import format_picks_json, select_bets
 from src.config_loader import load_config
 from src.data.csv_ingest import load_meeting_csvs
-from src.data.tab_api import fetch_all_races
+from src.data.tab_api import fetch_all_races_with_diagnostics
 from src.scrapers.thedogs_scraper import scrape_print_hub
 from src.tab_feature_engineer import MODEL_FEATURES, engineer_features
 
 AEST = timezone(timedelta(hours=10))
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+logger = logging.getLogger(__name__)
 
 VENUE_MODEL_NAMES = {
     "Angle Park": "Angle Park",
@@ -152,7 +154,8 @@ def _load_raw_data(options: PipelineOptions, config: dict[str, Any]) -> tuple[pd
         if raw_df.empty:
             raise RuntimeError(f"No race data found in {csv_dir}")
     elif source == "tab":
-        raw_df = fetch_all_races(date_str)
+        raw_df, skipped_races = fetch_all_races_with_diagnostics(date_str)
+        metadata["skipped_races"] = skipped_races
         if raw_df.empty:
             raise RuntimeError("No data from TAB API. Australian IP may be required.")
         if options.venue:
@@ -160,9 +163,12 @@ def _load_raw_data(options: PipelineOptions, config: dict[str, Any]) -> tuple[pd
                 raw_df["venue"].str.lower().str.contains(options.venue.lower())
                 | raw_df["track"].str.lower().str.contains(options.venue.lower())
             ]
+            if raw_df.empty:
+                raise RuntimeError(f"No TAB races matched venue filter: {options.venue}")
     else:
         raise ValueError(f"Unsupported source: {source}")
 
+    metadata.setdefault("skipped_races", [])
     return raw_df, date_str, metadata
 
 
@@ -207,6 +213,17 @@ def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
 
     picks_json = format_picks_json(picks, date_str, source=options.source)
 
+    skipped_races = metadata.get("skipped_races", [])
+    if skipped_races:
+        logger.info("Skipped races: %d", len(skipped_races))
+        for item in skipped_races:
+            race = item.get("race_number")
+            race_label = f"R{race}" if race is not None else "(no race)"
+            venue = item.get("venue") or item.get("venue_mnemonic") or "unknown venue"
+            reason = item.get("reason", "unknown_reason")
+            message = item.get("message", "")
+            logger.info("skip %s %s: %s — %s", venue, race_label, reason, message)
+
     output_paths = {}
     if not options.dry_run:
         outputs_dir = os.path.join(_HERE, "outputs")
@@ -215,29 +232,32 @@ def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
         latest_path = os.path.join(_HERE, "latest_picks.json")
         with open(latest_path, "w", encoding="utf-8") as f:
             json.dump(picks_json, f, indent=2, default=str)
+        latest_csv_path = os.path.join(_HERE, "latest_picks.csv")
 
         csv_path = os.path.join(outputs_dir, f"tab_picks_{date_str}.csv")
-        if picks:
-            pd.DataFrame(
-                [
-                    {
-                        "venue": p["venue"],
-                        "race": p["race_number"],
-                        "box": p["box"],
-                        "dog_name": p["dog_name"],
-                        "model_prob": p["model_prob"],
-                        "odds": p.get("odds", ""),
-                        "overlay_pct": p.get("overlay_pct", ""),
-                        "confidence": p.get("confidence", ""),
-                        "bet_amount": p.get("bet_amount", ""),
-                    }
-                    for p in picks
-                ]
-            ).to_csv(csv_path, index=False)
-        else:
-            pd.DataFrame().to_csv(csv_path, index=False)
+        latest_rows = [
+            {
+                "venue": p["venue"],
+                "race": p["race_number"],
+                "box": p["box"],
+                "dog_name": p["dog_name"],
+                "model_prob": p["model_prob"],
+                "odds": p.get("odds", ""),
+                "overlay_pct": p.get("overlay_pct", ""),
+                "confidence": p.get("confidence", ""),
+                "bet_amount": p.get("bet_amount", ""),
+            }
+            for p in picks
+        ]
+        latest_df = pd.DataFrame(latest_rows)
+        latest_df.to_csv(csv_path, index=False)
+        latest_df.to_csv(latest_csv_path, index=False)
 
-        output_paths = {"latest_json": latest_path, "picks_csv": csv_path}
+        output_paths = {
+            "latest_json": latest_path,
+            "latest_csv": latest_csv_path,
+            "picks_csv": csv_path,
+        }
 
     return {
         "run_date": date_str,
