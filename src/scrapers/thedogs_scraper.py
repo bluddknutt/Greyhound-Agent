@@ -36,6 +36,7 @@ import re
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import requests
 
@@ -75,6 +76,40 @@ FILE_TYPE_NAMES = {
     "racebook_short": "racebook_short.pdf",
     "racebook_long": "racebook_long.pdf",
 }
+
+
+def _parse_race_csv_filename(csv_url_or_name):
+    """Extract race metadata from a Race_*.csv name or URL path."""
+    path = urlparse(csv_url_or_name).path
+    filename = os.path.basename(path) or csv_url_or_name
+    filename = unquote(filename)
+
+    m = re.match(
+        r"Race_(\d+)_-_([A-Za-z_]+)_-_(\d{2})_(\w+)_(\d{4})\.csv$",
+        filename,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+
+    race_num = int(m.group(1))
+    venue = m.group(2).replace("_", " ").strip()
+    day = m.group(3)
+    month = m.group(4)
+    year = m.group(5)
+
+    try:
+        race_date = datetime.strptime(f"{day} {month} {year}", "%d %B %Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+    return {
+        "filename": filename,
+        "race_number": race_num,
+        "venue": venue,
+        "slug": _slugify(venue),
+        "date": race_date,
+    }
 
 
 def _fetch_html(url):
@@ -162,127 +197,48 @@ def _parse_print_hub(html, target_date_str):
     list[dict]
         List of venue dicts with keys: name, slug, downloads (dict of file_type→url).
     """
-    # Format date for matching in the HTML
-    try:
-        dt = datetime.strptime(target_date_str, "%Y-%m-%d")
-    except ValueError:
-        logger.error("Invalid date format: %s", target_date_str)
+    links = re.findall(r'href="([^"]+)"', html, flags=re.IGNORECASE)
+    if not links:
+        logger.warning("No links found on Print Hub page")
         return []
 
-    # Generate possible date display formats to match
-    day_name = dt.strftime("%a")  # e.g., "Sat"
-    day_num = dt.day
-    month_name = dt.strftime("%B")  # e.g., "April"
-    year = dt.year
+    by_venue = {}
+    skipped = 0
+    for raw_link in links:
+        if ".csv" not in raw_link.lower() or "race_" not in raw_link.lower():
+            continue
 
-    # Common formats: "Sat 11 April 2026", "Saturday 11 April 2026",
-    # "11 April 2026", "11/04/2026"
-    date_patterns = [
-        rf"{day_name}\w*\s+{day_num}\s+{month_name}\s+{year}",
-        rf"{day_num}\s+{month_name}\s+{year}",
-        rf"{day_num}/{dt.month:02d}/{year}",
-        target_date_str,
-    ]
+        full_url = raw_link if raw_link.startswith("http") else BASE_URL + raw_link
+        meta = _parse_race_csv_filename(full_url)
+        if not meta:
+            skipped += 1
+            continue
 
-    # Find the date section in the HTML
-    date_section_start = None
-    for pattern in date_patterns:
-        m = re.search(pattern, html, re.IGNORECASE)
-        if m:
-            date_section_start = m.start()
-            break
+        if meta["date"] != target_date_str:
+            continue
 
-    if date_section_start is None:
-        logger.error(
-            "Date section not found on Print Hub page for %s. "
-            "The date may not be posted yet.",
-            target_date_str,
+        venue_bucket = by_venue.setdefault(
+            meta["venue"],
+            {"name": meta["venue"], "slug": meta["slug"], "race_csvs": []},
         )
-        return []
-
-    # Find the next date section to bound our search
-    next_date_pattern = re.compile(
-        r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+\d{1,2}\s+\w+\s+\d{4}",
-        re.IGNORECASE,
-    )
-    next_match = next_date_pattern.search(html, date_section_start + 10)
-    date_section_end = next_match.start() if next_match else len(html)
-
-    section_html = html[date_section_start:date_section_end]
-
-    # Parse venue rows from the section
-    # Look for venue names and associated download links
-    venues = []
-
-    # Pattern to find venue entries with their download links
-    # The Print Hub typically has table rows with venue name + download links
-    venue_pattern = re.compile(
-        r'class="[^"]*venue[^"]*"[^>]*>([^<]+)<',
-        re.IGNORECASE,
-    )
-    venue_matches = venue_pattern.findall(section_html)
-
-    # Also try to find venue links
-    venue_link_pattern = re.compile(
-        r'href="(/racing/([^/"]+)/[^"]*)"[^>]*>([^<]*)</a>',
-        re.IGNORECASE,
-    )
-    link_matches = venue_link_pattern.findall(section_html)
-
-    # Find all download links in the section
-    download_pattern = re.compile(
-        r'href="([^"]+\.(csv|pdf|zip))"',
-        re.IGNORECASE,
-    )
-    all_downloads = download_pattern.findall(section_html)
-
-    # Build venue→download mapping by proximity
-    # Simple approach: find unique venue names, then associate nearby downloads
-    seen_venues = set()
-    for match in link_matches:
-        venue_name = match[2].strip() or match[1].replace("-", " ").title()
-        if venue_name and venue_name not in seen_venues:
-            seen_venues.add(venue_name)
-            slug = _slugify(venue_name)
-
-            # Find download URLs associated with this venue
-            downloads = {}
-            for dl_url, dl_ext in all_downloads:
-                dl_url_full = dl_url if dl_url.startswith("http") else BASE_URL + dl_url
-                dl_lower = dl_url.lower()
-
-                if slug[:4] in dl_lower or venue_name.lower()[:4] in dl_lower:
-                    if dl_ext.lower() == "csv":
-                        downloads["expert_form_csv"] = dl_url_full
-                    elif "hound" in dl_lower:
-                        downloads["the_hound_pdf"] = dl_url_full
-                    elif "short" in dl_lower or "compact" in dl_lower:
-                        downloads["racebook_short"] = dl_url_full
-                    elif "long" in dl_lower or "full" in dl_lower:
-                        downloads["racebook_long"] = dl_url_full
-                    elif "expert" in dl_lower:
-                        downloads["expert_form_pdf"] = dl_url_full
-                    elif dl_ext.lower() == "pdf" and "expert_form_pdf" not in downloads:
-                        downloads["expert_form_pdf"] = dl_url_full
-
-            venues.append({
-                "name": venue_name,
-                "slug": slug,
-                "downloads": downloads,
-            })
-
-    # Fallback: if no venues found via links, try extracting from download URLs
-    if not venues and all_downloads:
-        logger.info(
-            "No venue links found, attempting download URL extraction. "
-            "Found %d download links in date section.",
-            len(all_downloads),
+        venue_bucket["race_csvs"].append(
+            {
+                "race_number": meta["race_number"],
+                "filename": meta["filename"],
+                "url": full_url,
+            }
         )
+
+    venues = list(by_venue.values())
+    for venue in venues:
+        venue["race_csvs"].sort(key=lambda x: x["race_number"])
 
     logger.info(
-        "Found %d venues on Print Hub for %s",
+        "Found %d venues and %d Expert Form CSV links for %s (%d non-race CSV links skipped)",
         len(venues),
+        sum(len(v["race_csvs"]) for v in venues),
         target_date_str,
+        skipped,
     )
     return venues
 
@@ -362,17 +318,19 @@ def scrape_print_hub(date_str, output_dir="./downloads/", venue_filter=None):
 
         logger.info("Downloading files for %s...", venue["name"])
 
-        for file_type, url in venue["downloads"].items():
-            filename = FILE_TYPE_NAMES.get(file_type, f"{file_type}.dat")
+        for race_csv in venue.get("race_csvs", []):
+            filename = race_csv["filename"]
+            url = race_csv["url"]
+            race_number = race_csv["race_number"]
             dest = os.path.join(venue_dir, filename)
 
             if download_file(url, dest):
-                venue_results[file_type] = dest
+                venue_results[f"expert_form_csv_r{race_number}"] = dest
             else:
                 logger.warning(
-                    "Could not download %s for %s",
-                    file_type,
+                    "Could not download expert form CSV for %s R%s",
                     venue["name"],
+                    race_number,
                 )
 
             time.sleep(DOWNLOAD_RATE_LIMIT)

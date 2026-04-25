@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-04-25T21:04:22.011976+10:00",
+  "source": "none",
+  "date": "2026-04-25",
+  "picks": [],
+  "summary": {
+    "total_races": 0,
+    "total_picks": 0,
+    "avg_model_prob": 0.0
+  },
+  "errors": [
+    {
+      "source": "tab",
+      "error": "No data from TAB API. Australian IP may be required."
+    },
+    {
+      "source": "scrape",
+      "error": "No files downloaded from Print Hub"
+    },
+    {
+      "source": "csv",
+      "error": "No race data found in ./race_data/"
+    }
+  ]
+}

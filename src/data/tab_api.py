@@ -277,7 +277,7 @@ def fetch_race(date_str, venue_mnemonic, race_number):
     }
 
 
-def fetch_all_races(date_str):
+def fetch_all_races_with_diagnostics(date_str):
     """
     Fetch all greyhound races for a date, returning a flat DataFrame
     with one row per runner.
@@ -289,23 +289,75 @@ def fetch_all_races(date_str):
 
     Returns
     -------
-    pd.DataFrame
+    tuple[pd.DataFrame, list[dict]]
         DataFrame with columns matching csv_ingest output schema plus
-        odds-related columns.
+        odds-related columns, and race-level diagnostics for skipped races.
     """
     meetings = fetch_meetings(date_str)
     if not meetings:
         logger.warning("No greyhound meetings found for %s", date_str)
-        return pd.DataFrame()
+        return pd.DataFrame(), [{
+            "source": "tab",
+            "date": date_str,
+            "reason": "no_meetings",
+            "message": "No greyhound meetings returned from TAB API",
+        }]
 
     all_rows = []
+    skipped = []
     for meeting in meetings:
         venue_mn = meeting["venueMnemonic"]
         venue_name = meeting["meetingName"]
 
-        for race_num in meeting["races"]:
+        race_numbers = meeting.get("races", [])
+        if not race_numbers:
+            skipped.append({
+                "source": "tab",
+                "venue": venue_name,
+                "venue_mnemonic": venue_mn,
+                "race_number": None,
+                "reason": "no_race_numbers",
+                "message": "Meeting contains no race numbers",
+            })
+            logger.info(
+                "Skipping %s (%s): no race numbers in meeting payload",
+                venue_name,
+                venue_mn,
+            )
+            continue
+
+        for race_num in race_numbers:
             race = fetch_race(date_str, venue_mn, race_num)
-            if not race or not race.get("runners"):
+            if not race:
+                skipped.append({
+                    "source": "tab",
+                    "venue": venue_name,
+                    "venue_mnemonic": venue_mn,
+                    "race_number": race_num,
+                    "reason": "race_fetch_failed",
+                    "message": "TAB API race endpoint returned no payload",
+                })
+                logger.info(
+                    "Skipping %s R%s: TAB race payload unavailable",
+                    venue_name,
+                    race_num,
+                )
+                continue
+
+            if not race.get("runners"):
+                skipped.append({
+                    "source": "tab",
+                    "venue": venue_name,
+                    "venue_mnemonic": venue_mn,
+                    "race_number": race_num,
+                    "reason": "no_runners",
+                    "message": "Race payload contained zero active runners",
+                })
+                logger.info(
+                    "Skipping %s R%s: no active runners",
+                    venue_name,
+                    race_num,
+                )
                 continue
 
             for runner in race["runners"]:
@@ -341,16 +393,23 @@ def fetch_all_races(date_str):
 
     if not all_rows:
         logger.warning("No runners fetched for %s", date_str)
-        return pd.DataFrame()
+        return pd.DataFrame(), skipped
 
     df = pd.DataFrame(all_rows)
     logger.info(
-        "Fetched %d runners across %d venues, %d races for %s",
+        "Fetched %d runners across %d venues, %d races for %s (%d races skipped)",
         len(df),
         len(meetings),
         df.groupby(["venue", "race_number"]).ngroups,
         date_str,
+        len(skipped),
     )
+    return df, skipped
+
+
+def fetch_all_races(date_str):
+    """Backward-compatible wrapper that returns only the flattened DataFrame."""
+    df, _ = fetch_all_races_with_diagnostics(date_str)
     return df
 
 
