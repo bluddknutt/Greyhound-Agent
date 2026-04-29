@@ -196,6 +196,11 @@ def _prediction_records(predictions_df: pd.DataFrame) -> list[dict[str, Any]]:
     return records
 
 
+def _is_scratched_runner_name(name: Any) -> bool:
+    text = str(name or "").strip().lower()
+    return "scratch" in text
+
+
 def _is_vacant_runner_name(name: Any) -> bool:
     text = str(name or "").strip().lower()
     if not text:
@@ -213,6 +218,18 @@ def _apply_race_filters(raw_df: pd.DataFrame, metadata: dict[str, Any]) -> pd.Da
 
     filtered = raw_df.copy()
     skipped = metadata.setdefault("skipped_races", [])
+
+    scratched_mask = filtered["dog_name"].map(_is_scratched_runner_name)
+    scratched_runners = filtered[scratched_mask]
+    for (venue, race_num), _ in scratched_runners.groupby(["venue", "race_number"]):
+        skipped.append({
+            "source": metadata.get("source"),
+            "venue": venue,
+            "race_number": int(race_num),
+            "reason": "scratched_runner_filtered",
+            "message": "Removed scratched runner entries",
+        })
+    filtered = filtered[~scratched_mask]
 
     valid_runner_mask = ~filtered["dog_name"].map(_is_vacant_runner_name)
     invalid_runners = filtered[~valid_runner_mask]

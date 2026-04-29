@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--venue", default=None)
     parser.add_argument("--csv-dir", default="./race_data/")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--offline-smoke", action="store_true", help="Run deterministic offline smoke using fixture CSV data")
     return parser.parse_args()
 
 
@@ -59,6 +60,29 @@ def main() -> int:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
     date_str = resolve_date(args.date)
+
+    if args.offline_smoke:
+        fixture_dir = Path(__file__).resolve().parent / "tests" / "fixtures" / "live_smoke"
+        options = PipelineOptions(
+            source="csv",
+            date=args.date or "2026-04-25",
+            venue=args.venue,
+            csv_dir=str(fixture_dir),
+            dry_run=False,
+        )
+        result = run_pipeline(options)
+        if result["summary"]["bets"] <= 0:
+            raise RuntimeError("Offline smoke produced no picks; check tests/fixtures/live_smoke")
+        print(json.dumps({
+            "ok": True,
+            "source": "offline_smoke",
+            "run_date": result["run_date"],
+            "bets": result["summary"]["bets"],
+            "outputs": result.get("outputs", {}),
+            "skipped_races": result.get("meta", {}).get("skipped_races", []),
+        }, indent=2, default=str))
+        return 0
+
     failed_attempts = []
 
     for source in ("tab", "scrape", "csv"):
@@ -87,7 +111,9 @@ def main() -> int:
             failed_attempts.append({"source": source, "error": msg})
             logger.warning("Source %s failed: %s", source, msg)
 
+    logger.error("Live data unavailable; use --offline-smoke or provide race_data/")
     summary = _write_empty_outputs(date_str, failed_attempts)
+    summary["error"] = "Live data unavailable; use --offline-smoke or provide race_data/"
     print(json.dumps(summary, indent=2, default=str))
     return 1
 
