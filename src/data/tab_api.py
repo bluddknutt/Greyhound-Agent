@@ -233,6 +233,8 @@ def fetch_race(date_str, venue_mnemonic, race_number):
             continue
 
         runner_name = r.get("runnerName", "")
+        if not str(runner_name or "").strip() or "vacant box" in str(runner_name).lower() or "no reserve" in str(runner_name).lower():
+            continue
         runner_number = r.get("runnerNumber", 0)
         barrier = r.get("barrierNumber", runner_number)
         trainer = r.get("trainerName", r.get("trainerFullName", ""))

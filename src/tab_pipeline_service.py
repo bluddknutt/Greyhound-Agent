@@ -28,6 +28,7 @@ from src.tab_feature_engineer import MODEL_FEATURES, engineer_features
 AEST = timezone(timedelta(hours=10))
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 logger = logging.getLogger(__name__)
+MIN_VALID_RUNNERS_PER_RACE = 5
 
 VENUE_MODEL_NAMES = {
     "Angle Park": "Angle Park",
@@ -195,16 +196,112 @@ def _prediction_records(predictions_df: pd.DataFrame) -> list[dict[str, Any]]:
     return records
 
 
+def _is_vacant_runner_name(name: Any) -> bool:
+    text = str(name or "").strip().lower()
+    if not text:
+        return True
+    return "vacant box" in text or "no reserve" in text
+
+
+def _is_maiden_grade(grade: Any) -> bool:
+    return "maiden" in str(grade or "").strip().lower()
+
+
+def _apply_race_filters(raw_df: pd.DataFrame, metadata: dict[str, Any]) -> pd.DataFrame:
+    if raw_df.empty:
+        return raw_df
+
+    filtered = raw_df.copy()
+    skipped = metadata.setdefault("skipped_races", [])
+
+    valid_runner_mask = ~filtered["dog_name"].map(_is_vacant_runner_name)
+    invalid_runners = filtered[~valid_runner_mask]
+    for (venue, race_num), _ in invalid_runners.groupby(["venue", "race_number"]):
+        skipped.append({
+            "source": metadata.get("source"),
+            "venue": venue,
+            "race_number": int(race_num),
+            "reason": "vacant_runner_filtered",
+            "message": "Removed vacant/empty runner entries",
+        })
+    filtered = filtered[valid_runner_mask]
+
+    race_sizes = filtered.groupby(["venue", "race_number"])["dog_name"].nunique()
+    small_races = race_sizes[race_sizes < MIN_VALID_RUNNERS_PER_RACE]
+    for (venue, race_num), size in small_races.items():
+        skipped.append({
+            "source": metadata.get("source"),
+            "venue": venue,
+            "race_number": int(race_num),
+            "reason": "insufficient_valid_runners",
+            "message": f"Only {int(size)} valid runners after filtering",
+        })
+    if not small_races.empty:
+        filtered = filtered.merge(
+            small_races.rename("_small").reset_index(),
+            on=["venue", "race_number"],
+            how="left",
+        )
+        filtered = filtered[filtered["_small"].isna()].drop(columns=["_small"])
+
+    maiden_races = filtered.groupby(["venue", "race_number"])["grade"].apply(lambda s: all(_is_maiden_grade(g) for g in s))
+    maiden_races = maiden_races[maiden_races]
+    for venue, race_num in maiden_races.index:
+        skipped.append({
+            "source": metadata.get("source"),
+            "venue": venue,
+            "race_number": int(race_num),
+            "reason": "low_information_maiden",
+            "message": "All runners are maiden-grade",
+        })
+    if not maiden_races.empty:
+        filtered = filtered.merge(
+            maiden_races.rename("_maiden").reset_index(),
+            on=["venue", "race_number"],
+            how="left",
+        )
+        filtered = filtered[filtered["_maiden"].isna()].drop(columns=["_maiden"])
+
+    return filtered
+
+
+def _enforce_deploy_guard(picks: list[dict[str, Any]], predictions_df: pd.DataFrame) -> None:
+    if not picks:
+        return
+    box1_pct = sum(1 for p in picks if int(p.get("box") or 0) == 1) / len(picks)
+    if box1_pct > 0.25:
+        raise RuntimeError(f"Deploy guard blocked publish: Box 1 picks at {box1_pct:.1%} (>25%)")
+
+    for p in picks:
+        if _is_vacant_runner_name(p.get("dog_name")):
+            raise RuntimeError("Deploy guard blocked publish: vacant runner present in final picks")
+
+    for p in picks:
+        grade = predictions_df.loc[
+            (predictions_df["_venue"] == p.get("venue"))
+            & (predictions_df["_race_number"] == p.get("race_number"))
+            & (predictions_df["_dog_name"] == p.get("dog_name")),
+            "_grade",
+        ]
+        if not grade.empty and _is_maiden_grade(grade.iloc[0]):
+            raise RuntimeError("Deploy guard blocked publish: maiden race present in final picks")
+
+
 def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
     """Run the prediction pipeline and return structured data."""
     config = load_config()
     raw_df, date_str, metadata = _load_raw_data(options, config)
+    raw_df = _apply_race_filters(raw_df, metadata)
+    if raw_df.empty:
+        raise RuntimeError("No races remain after runner/race safety filters")
 
     features_df = engineer_features(raw_df)
     if features_df.empty:
         raise RuntimeError("Feature engineering produced no output")
 
     predictions_df = predict_with_models(features_df)
+    box_distribution = predictions_df.groupby("_dog_number").size().sort_index().to_dict()
+    logger.info("Box distribution in predictions: %s", box_distribution)
     picks = select_bets(predictions_df, config)
 
     n_runners = int(len(raw_df))
@@ -226,6 +323,7 @@ def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
 
     output_paths = {}
     if not options.dry_run:
+        _enforce_deploy_guard(picks, predictions_df)
         outputs_dir = os.path.join(_HERE, "outputs")
         os.makedirs(outputs_dir, exist_ok=True)
 

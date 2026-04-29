@@ -1,7 +1,7 @@
 import pandas as pd
 
 from src.data import tab_api
-from src.tab_pipeline_service import PipelineOptions, run_pipeline
+from src.tab_pipeline_service import PipelineOptions, _apply_race_filters, _enforce_deploy_guard, run_pipeline
 
 
 def test_fetch_all_races_with_diagnostics_collects_skips(monkeypatch):
@@ -30,25 +30,53 @@ def test_fetch_all_races_with_diagnostics_collects_skips(monkeypatch):
     assert {s["reason"] for s in skipped} == {"race_fetch_failed", "no_runners"}
 
 
+def test_race_filters_apply_all_guards():
+    raw_df = pd.DataFrame([
+        {"venue": "A", "race_number": 1, "dog_name": "", "grade": "Grade 5"},
+        {"venue": "A", "race_number": 1, "dog_name": "DOG 2", "grade": "Grade 5"},
+        {"venue": "A", "race_number": 1, "dog_name": "DOG 3", "grade": "Grade 5"},
+        {"venue": "A", "race_number": 1, "dog_name": "DOG 4", "grade": "Grade 5"},
+        {"venue": "A", "race_number": 1, "dog_name": "DOG 5", "grade": "Grade 5"},
+        {"venue": "A", "race_number": 2, "dog_name": "DOG 1", "grade": "Maiden"},
+        {"venue": "A", "race_number": 2, "dog_name": "DOG 2", "grade": "Maiden"},
+        {"venue": "A", "race_number": 2, "dog_name": "DOG 3", "grade": "Maiden"},
+        {"venue": "A", "race_number": 2, "dog_name": "DOG 4", "grade": "Maiden"},
+        {"venue": "A", "race_number": 2, "dog_name": "DOG 5", "grade": "Maiden"},
+    ])
+    meta = {"source": "csv", "skipped_races": []}
+    filtered = _apply_race_filters(raw_df, meta)
+    assert filtered.empty
+    reasons = {x["reason"] for x in meta["skipped_races"]}
+    assert "vacant_runner_filtered" in reasons
+    assert "insufficient_valid_runners" in reasons
+    assert "low_information_maiden" in reasons
+
+
+def test_deploy_guard_blocks_box1_and_maiden():
+    picks = [{"venue": "A", "race_number": 1, "dog_name": "DOG 1", "box": 1}]
+    preds = pd.DataFrame([
+        {"_venue": "A", "_race_number": 1, "_dog_name": "DOG 1", "_grade": "Maiden"}
+    ])
+    try:
+        _enforce_deploy_guard(picks, preds)
+        assert False
+    except RuntimeError as exc:
+        assert "Box 1" in str(exc)
+
+
 def test_run_pipeline_writes_latest_csv(monkeypatch, tmp_path):
-    raw_df = pd.DataFrame(
-        [
-            {
-                "venue": "Angle Park",
-                "race_number": 1,
-                "dog_name": "DOG A",
-                "dog_number": 1,
-                "track": "AP",
-            }
-        ]
-    )
+    raw_df = pd.DataFrame([
+        {"venue": "Angle Park", "race_number": 1, "dog_name": f"DOG {i}", "dog_number": i, "track": "AP", "grade": "Grade 5"}
+        for i in range(1, 6)
+    ])
     predictions_df = pd.DataFrame(
         [
             {
                 "_venue": "Angle Park",
                 "_race_number": 1,
                 "_dog_name": "DOG A",
-                "_dog_number": 1,
+                "_dog_number": 2,
+                "_grade": "Grade 5",
                 "FinalScore": 1.5,
                 "model_prob": 0.4,
                 "_odds": 3.0,
@@ -71,7 +99,7 @@ def test_run_pipeline_writes_latest_csv(monkeypatch, tmp_path):
                 "venue": "Angle Park",
                 "race_number": 1,
                 "dog_name": "DOG A",
-                "box": 1,
+                "box": 2,
                 "model_prob": 0.4,
                 "odds": 3.0,
                 "overlay_pct": 20.0,
