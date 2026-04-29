@@ -352,6 +352,8 @@ def load_race_csv(filepath):
     # Build output rows
     records = []
     for dog_name, dog_number, runs in dogs:
+        if not str(dog_name or "").strip() or "vacant box" in str(dog_name).lower() or "no reserve" in str(dog_name).lower():
+            continue
         for seq, run in enumerate(runs, 1):
             # Coerce numeric fields
             record = {

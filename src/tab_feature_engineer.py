@@ -127,13 +127,13 @@ def _generic_box_advantage(box, dist_m):
     dist_m = float(dist_m) if not pd.isna(dist_m) else 350
 
     if dist_m <= 350:
-        adv = {1: 0.18, 2: 0.15, 3: 0.12, 4: 0.11, 5: 0.10,
+        adv = {1: 0.11, 2: 0.15, 3: 0.12, 4: 0.11, 5: 0.10,
                6: 0.09, 7: 0.10, 8: 0.13, 9: 0.05, 10: 0.05}
     elif dist_m <= 450:
-        adv = {1: 0.16, 2: 0.13, 3: 0.12, 4: 0.11, 5: 0.11,
+        adv = {1: 0.115, 2: 0.13, 3: 0.12, 4: 0.11, 5: 0.11,
                6: 0.11, 7: 0.12, 8: 0.12, 9: 0.05, 10: 0.05}
     else:
-        adv = {1: 0.14, 2: 0.12, 3: 0.12, 4: 0.12, 5: 0.12,
+        adv = {1: 0.12, 2: 0.12, 3: 0.12, 4: 0.12, 5: 0.12,
                6: 0.12, 7: 0.12, 8: 0.12, 9: 0.05, 10: 0.05}
     return adv.get(box, 0.08)
 
@@ -150,7 +150,7 @@ def _compute_final_score(row):
             "EarlySpeedIndex": 0.30, "Speed_kmh": 0.20,
             "ConsistencyIndex": 0.10, "FinishConsistency": 0.05,
             "PrizeMoney": 0.10, "RecentFormBoost": 0.10,
-            "BoxBiasFactor": 0.10, "TrainerStrikeRate": 0.05,
+            "BoxBiasFactor": 0.025, "TrainerStrikeRate": 0.05,
             "DistanceSuit": 0.05, "TrackConditionAdj": 0.05,
         }
     elif distance <= 500:  # Middle
@@ -158,7 +158,7 @@ def _compute_final_score(row):
             "EarlySpeedIndex": 0.25, "Speed_kmh": 0.20,
             "ConsistencyIndex": 0.15, "FinishConsistency": 0.05,
             "PrizeMoney": 0.10, "RecentFormBoost": 0.10,
-            "BoxBiasFactor": 0.05, "TrainerStrikeRate": 0.05,
+            "BoxBiasFactor": 0.025, "TrainerStrikeRate": 0.05,
             "DistanceSuit": 0.05, "TrackConditionAdj": 0.05,
         }
     else:  # Long
