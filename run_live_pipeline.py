@@ -17,7 +17,12 @@ import logging
 from pathlib import Path
 
 from src.bet_selector import format_picks_json
-from src.tab_pipeline_service import PipelineOptions, resolve_date, run_pipeline
+from src.tab_pipeline_service import (
+    DeployGuardError,
+    PipelineOptions,
+    resolve_date,
+    run_pipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--csv-dir", default="./race_data/")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--offline-smoke", action="store_true", help="Run deterministic offline smoke using fixture CSV data")
+    # The daily workflow invokes `--source tab`. Accept it (previously argparse
+    # rejected the flag and the job crashed before producing picks). When a
+    # source is given it is tried first; the others remain a resilient fallback.
+    parser.add_argument("--source", choices=["auto", "tab", "scrape", "csv"], default="auto",
+                        help="Preferred data source; falls back to the others on failure")
     return parser.parse_args()
 
 
@@ -85,7 +95,12 @@ def main() -> int:
 
     failed_attempts = []
 
-    for source in ("tab", "scrape", "csv"):
+    if args.source == "auto":
+        sources = ("tab", "scrape", "csv")
+    else:
+        sources = (args.source,) + tuple(s for s in ("tab", "scrape", "csv") if s != args.source)
+
+    for source in sources:
         options = PipelineOptions(
             source=source,
             date=date_str,
@@ -106,6 +121,17 @@ def main() -> int:
                 "skipped_races": result.get("meta", {}).get("skipped_races", []),
             }, indent=2, default=str))
             return 0
+        except DeployGuardError as exc:
+            # A guard trip means the picks are BAD. Hard-stop: do NOT fall through
+            # to another source and do NOT overwrite latest_picks.json with empty
+            # output. The site keeps yesterday's picks. Non-zero exit => red X in CI.
+            print(
+                f"DEPLOY BLOCKED: {exc}. Picks NOT written. "
+                "Frontend will keep showing yesterday's.",
+                flush=True,
+            )
+            logger.error("Deploy guard blocked publish on source=%s: %s", source, exc)
+            return 1
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             failed_attempts.append({"source": source, "error": msg})

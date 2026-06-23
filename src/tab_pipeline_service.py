@@ -205,6 +205,10 @@ def _is_vacant_runner_name(name: Any) -> bool:
     text = str(name or "").strip().lower()
     if not text:
         return True
+    # /^vacant/i — drop any runner whose name starts with "vacant"
+    # (Vacant Box, Vacant Trap, "Vacant Box 4", ...), not just "vacant box".
+    if text.startswith("vacant"):
+        return True
     return "vacant box" in text or "no reserve" in text
 
 
@@ -261,47 +265,98 @@ def _apply_race_filters(raw_df: pd.DataFrame, metadata: dict[str, Any]) -> pd.Da
         )
         filtered = filtered[filtered["_small"].isna()].drop(columns=["_small"])
 
-    maiden_races = filtered.groupby(["venue", "race_number"])["grade"].apply(lambda s: all(_is_maiden_grade(g) for g in s))
-    maiden_races = maiden_races[maiden_races]
-    for venue, race_num in maiden_races.index:
-        skipped.append({
-            "source": metadata.get("source"),
-            "venue": venue,
-            "race_number": int(race_num),
-            "reason": "low_information_maiden",
-            "message": "All runners are maiden-grade",
-        })
-    if not maiden_races.empty:
-        filtered = filtered.merge(
-            maiden_races.rename("_maiden").reset_index(),
-            on=["venue", "race_number"],
-            how="left",
-        )
-        filtered = filtered[filtered["_maiden"].isna()].drop(columns=["_maiden"])
+    # Low-information / maiden filter (Task 3). Skip a race when its runners
+    # carry too little form to model reliably:
+    #   * grade matches /maiden/i  AND  >= 3 runners have prior_starts < 3, OR
+    #   * grade is null/unknown    AND  >= 3 runners have prior_starts < 3.
+    # When no prior-starts column is present (some CSV sources), fall back to the
+    # original rule: skip only when every runner is maiden-grade.
+    low_info_keys: list[tuple[Any, Any]] = []
+    for (venue, race_num), race_df in filtered.groupby(["venue", "race_number"]):
+        grades = list(race_df["grade"]) if "grade" in race_df.columns else []
+        any_maiden = any(_is_maiden_grade(g) for g in grades)
+        all_maiden = bool(grades) and all(_is_maiden_grade(g) for g in grades)
+        # NaN-safe blank check: a None grade becomes NaN in the DataFrame.
+        grade_unknown = (not grades) or all(pd.isna(g) or not str(g).strip() for g in grades)
+
+        is_low, reason = False, "low_information_maiden"
+        if "_career_starts" in race_df.columns:
+            starts = pd.to_numeric(race_df["_career_starts"], errors="coerce")
+            n_low = int((starts < 3).sum())
+            if (any_maiden or grade_unknown) and n_low >= 3:
+                is_low = True
+                reason = "low_information_maiden" if any_maiden else "low_information_unknown_grade"
+        elif all_maiden:
+            # No prior-starts column: fall back to the original all-maiden rule.
+            is_low = True
+        if is_low:
+            low_info_keys.append((venue, race_num))
+            skipped.append({
+                "source": metadata.get("source"),
+                "venue": venue,
+                "race_number": int(race_num),
+                "reason": reason,
+                "message": "Maiden / low-information race skipped (insufficient form)",
+            })
+
+    if low_info_keys:
+        key_set = set(low_info_keys)
+        keep = ~filtered.apply(lambda r: (r["venue"], r["race_number"]) in key_set, axis=1)
+        filtered = filtered[keep]
 
     return filtered
 
 
+class DeployGuardError(RuntimeError):
+    """Raised when the deploy guard blocks publishing bad picks.
+
+    run_live_pipeline catches this, prints the block reason, and exits 1 WITHOUT
+    overwriting latest_picks.json — so the Vercel site keeps yesterday's picks
+    instead of publishing a bad set.
+    """
+
+
 def _enforce_deploy_guard(picks: list[dict[str, Any]], predictions_df: pd.DataFrame) -> None:
+    """Block the publish (raise DeployGuardError) if ANY kill criterion fires:
+    Box 1 winner pct > 25%, any vacant runner in picks, or any maiden race in picks.
+    Always logs the guard inputs first so a blocked run is explainable.
+    """
     if not picks:
         return
-    box1_pct = sum(1 for p in picks if int(p.get("box") or 0) == 1) / len(picks)
-    if box1_pct > 0.25:
-        raise RuntimeError(f"Deploy guard blocked publish: Box 1 picks at {box1_pct:.1%} (>25%)")
 
-    for p in picks:
-        if _is_vacant_runner_name(p.get("dog_name")):
-            raise RuntimeError("Deploy guard blocked publish: vacant runner present in final picks")
+    n = len(picks)
+    box1_pct = sum(1 for p in picks if int(p.get("box") or 0) == 1) / n
+    n_vacant = sum(1 for p in picks if _is_vacant_runner_name(p.get("dog_name")))
 
-    for p in picks:
-        grade = predictions_df.loc[
+    def _pick_grade(p: dict[str, Any]) -> Any:
+        if "_grade" not in predictions_df.columns:
+            return None
+        g = predictions_df.loc[
             (predictions_df["_venue"] == p.get("venue"))
             & (predictions_df["_race_number"] == p.get("race_number"))
             & (predictions_df["_dog_name"] == p.get("dog_name")),
             "_grade",
         ]
-        if not grade.empty and _is_maiden_grade(grade.iloc[0]):
-            raise RuntimeError("Deploy guard blocked publish: maiden race present in final picks")
+        return g.iloc[0] if not g.empty else None
+
+    n_maiden = sum(1 for p in picks if _is_maiden_grade(_pick_grade(p)))
+
+    # Observability: always log the guard inputs (every run) so a block is explainable.
+    logger.info(
+        "Deploy-guard inputs: picks=%d box1_pct=%.1f%% vacant_in_picks=%d maiden_in_picks=%d",
+        n, box1_pct * 100, n_vacant, n_maiden,
+    )
+
+    reasons: list[str] = []
+    if box1_pct > 0.25:
+        reasons.append(f"Box 1 winner pct {box1_pct:.1%} (>25%)")
+    if n_vacant > 0:
+        reasons.append(f"{n_vacant} vacant runner(s) present in picks")
+    if n_maiden > 0:
+        reasons.append(f"{n_maiden} maiden race(s) present in picks")
+
+    if reasons:
+        raise DeployGuardError("; ".join(reasons))
 
 
 def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
@@ -321,11 +376,30 @@ def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
     logger.info("Box distribution in predictions: %s", box_distribution)
     picks = select_bets(predictions_df, config)
 
+    # Observability (Task 4): winner-pick distribution by box every run.
+    pick_box_dist: dict[int, int] = {}
+    for p in picks:
+        b = int(p.get("box") or 0)
+        pick_box_dist[b] = pick_box_dist.get(b, 0) + 1
+    logger.info("Winner-pick distribution by box: %s", dict(sorted(pick_box_dist.items())))
+
     n_runners = int(len(raw_df))
     n_venues = int(raw_df["venue"].nunique()) if "venue" in raw_df.columns else 0
     n_races = int(raw_df.groupby(["venue", "race_number"]).ngroups) if not raw_df.empty else 0
 
     picks_json = format_picks_json(picks, date_str, source=options.source)
+
+    # Observability (Task 6): there is NO "paper unlock 94/20" counter in this
+    # repo's pipeline (such a paper->live promotion gate would live in
+    # results_tracker / the frontend, not here), so there is no unlock condition
+    # to instrument. Instead log the paper-run state every run so the inputs to
+    # any promotion decision are visible. Paper-only — no real stakes are placed.
+    total_paper_stake = float(sum(p.get("bet_amount", 0) for p in picks))
+    logger.info(
+        "Paper-mode run state: source=%s picks=%d races=%d total_paper_stake=%.2f avg_model_prob=%s",
+        options.source, len(picks), n_races, total_paper_stake,
+        picks_json.get("summary", {}).get("avg_model_prob"),
+    )
 
     skipped_races = metadata.get("skipped_races", [])
     if skipped_races:

@@ -185,6 +185,10 @@ def generic_box_advantage(box, dist_m):
         adv = {1: 0.16, 2: 0.13, 3: 0.12, 4: 0.11, 5: 0.11, 6: 0.11, 7: 0.12, 8: 0.12, 9: 0.05, 10: 0.05}
     else:
         adv = {1: 0.14, 2: 0.12, 3: 0.12, 4: 0.12, 5: 0.12, 6: 0.12, 7: 0.12, 8: 0.12, 9: 0.05, 10: 0.05}
+    # Box-1 de-bias (hotfix): box 1 was the single most over-weighted box and
+    # drove a ~57% box-1 winner rate. Pin box 1's prior to the median of boxes 1-8.
+    _b18 = sorted(adv[b] for b in range(1, 9))
+    adv[1] = (_b18[3] + _b18[4]) / 2
     return adv.get(int(box), 0.08)
 
 
@@ -330,7 +334,7 @@ def compute_track_fitness(row, today_dist_m):
 WEIGHTS = {
     "speed":       0.25,
     "form":        0.22,
-    "box_bias":    0.12,
+    "box_bias":    0.06,  # hotfix: halved from 0.12 to curb box-1 bias
     "class":       0.10,
     "early_speed": 0.10,
     "consistency": 0.11,
