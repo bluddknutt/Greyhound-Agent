@@ -135,6 +135,9 @@ def _generic_box_advantage(box, dist_m):
     else:
         adv = {1: 0.12, 2: 0.12, 3: 0.12, 4: 0.12, 5: 0.12,
                6: 0.12, 7: 0.12, 8: 0.12, 9: 0.05, 10: 0.05}
+    # Box-1 de-bias (hotfix): pin box 1's prior to the median of boxes 1-8.
+    _b18 = sorted(adv[b] for b in range(1, 9))
+    adv[1] = (_b18[3] + _b18[4]) / 2
     return adv.get(box, 0.08)
 
 

@@ -30,7 +30,7 @@ _DEFAULTS: dict[str, Any] = {
         "weights": {
             "speed": 0.25,
             "form": 0.22,
-            "box_bias": 0.12,
+            "box_bias": 0.06,  # hotfix: halved from 0.12 to curb box-1 bias
             "class": 0.10,
             "early_speed": 0.10,
             "consistency": 0.11,
