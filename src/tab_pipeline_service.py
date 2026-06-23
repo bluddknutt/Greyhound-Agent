@@ -205,6 +205,10 @@ def _is_vacant_runner_name(name: Any) -> bool:
     text = str(name or "").strip().lower()
     if not text:
         return True
+    # /^vacant/i — drop any runner whose name starts with "vacant"
+    # (Vacant Box, Vacant Trap, "Vacant Box 4", ...), not just "vacant box".
+    if text.startswith("vacant"):
+        return True
     return "vacant box" in text or "no reserve" in text
 
 
