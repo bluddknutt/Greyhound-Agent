@@ -5,9 +5,12 @@ and the deploy guard that blocks bad picks before latest_picks.json is written.
 """
 
 import pandas as pd
+import pytest
 
 from src.tab_pipeline_service import (
+    DeployGuardError,
     _apply_race_filters,
+    _enforce_deploy_guard,
     _is_vacant_runner_name,
 )
 
@@ -105,3 +108,70 @@ def test_maiden_but_experienced_field_not_skipped():
     df = pd.DataFrame(_race_rows("Dapto", 6, runners))
     out = _apply_race_filters(df, meta)
     assert len(out) == 6
+
+
+# --------------------------------------------------------------------------- #
+# Task 5 — deploy guard raises DeployGuardError (-> sys.exit(1)) on each of the
+# three kill criteria, and passes a clean pick set.
+# --------------------------------------------------------------------------- #
+def _preds(rows):
+    return pd.DataFrame(rows)
+
+
+def test_guard_blocks_box1_over_25pct():
+    # 4 picks, 2 in box 1 = 50% > 25% -> block
+    picks = [
+        {"venue": "V", "race_number": 1, "dog_name": "A", "box": 1},
+        {"venue": "V", "race_number": 2, "dog_name": "B", "box": 1},
+        {"venue": "V", "race_number": 3, "dog_name": "C", "box": 5},
+        {"venue": "V", "race_number": 4, "dog_name": "D", "box": 7},
+    ]
+    preds = _preds([{"_venue": "V", "_race_number": i + 1, "_dog_name": n, "_grade": "5"}
+                    for i, n in enumerate(["A", "B", "C", "D"])])
+    with pytest.raises(DeployGuardError) as e:
+        _enforce_deploy_guard(picks, preds)
+    assert "box 1" in str(e.value).lower()
+
+
+def test_guard_blocks_vacant_in_picks():
+    picks = [
+        {"venue": "V", "race_number": 1, "dog_name": "Vacant Box", "box": 2},
+        {"venue": "V", "race_number": 2, "dog_name": "Real Dog", "box": 5},
+        {"venue": "V", "race_number": 3, "dog_name": "Another", "box": 6},
+        {"venue": "V", "race_number": 4, "dog_name": "Yet More", "box": 8},
+    ]
+    preds = _preds([{"_venue": "V", "_race_number": i + 1, "_dog_name": n, "_grade": "5"}
+                    for i, n in enumerate(["Vacant Box", "Real Dog", "Another", "Yet More"])])
+    with pytest.raises(DeployGuardError) as e:
+        _enforce_deploy_guard(picks, preds)
+    assert "vacant" in str(e.value).lower()
+
+
+def test_guard_blocks_maiden_in_picks():
+    picks = [
+        {"venue": "V", "race_number": 1, "dog_name": "A", "box": 4},
+        {"venue": "V", "race_number": 2, "dog_name": "B", "box": 5},
+        {"venue": "V", "race_number": 3, "dog_name": "C", "box": 6},
+        {"venue": "V", "race_number": 4, "dog_name": "D", "box": 7},
+    ]
+    preds = _preds([
+        {"_venue": "V", "_race_number": 1, "_dog_name": "A", "_grade": "Maiden"},
+        {"_venue": "V", "_race_number": 2, "_dog_name": "B", "_grade": "5"},
+        {"_venue": "V", "_race_number": 3, "_dog_name": "C", "_grade": "5"},
+        {"_venue": "V", "_race_number": 4, "_dog_name": "D", "_grade": "5"},
+    ])
+    with pytest.raises(DeployGuardError) as e:
+        _enforce_deploy_guard(picks, preds)
+    assert "maiden" in str(e.value).lower()
+
+
+def test_guard_passes_clean_picks():
+    picks = [
+        {"venue": "V", "race_number": 1, "dog_name": "A", "box": 3},
+        {"venue": "V", "race_number": 2, "dog_name": "B", "box": 6},
+    ]
+    preds = _preds([
+        {"_venue": "V", "_race_number": 1, "_dog_name": "A", "_grade": "5"},
+        {"_venue": "V", "_race_number": 2, "_dog_name": "B", "_grade": "5"},
+    ])
+    _enforce_deploy_guard(picks, preds)  # must not raise

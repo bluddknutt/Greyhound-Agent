@@ -17,7 +17,12 @@ import logging
 from pathlib import Path
 
 from src.bet_selector import format_picks_json
-from src.tab_pipeline_service import PipelineOptions, resolve_date, run_pipeline
+from src.tab_pipeline_service import (
+    DeployGuardError,
+    PipelineOptions,
+    resolve_date,
+    run_pipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +111,17 @@ def main() -> int:
                 "skipped_races": result.get("meta", {}).get("skipped_races", []),
             }, indent=2, default=str))
             return 0
+        except DeployGuardError as exc:
+            # A guard trip means the picks are BAD. Hard-stop: do NOT fall through
+            # to another source and do NOT overwrite latest_picks.json with empty
+            # output. The site keeps yesterday's picks. Non-zero exit => red X in CI.
+            print(
+                f"DEPLOY BLOCKED: {exc}. Picks NOT written. "
+                "Frontend will keep showing yesterday's.",
+                flush=True,
+            )
+            logger.error("Deploy guard blocked publish on source=%s: %s", source, exc)
+            return 1
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             failed_attempts.append({"source": source, "error": msg})

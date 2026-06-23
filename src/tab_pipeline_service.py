@@ -307,26 +307,56 @@ def _apply_race_filters(raw_df: pd.DataFrame, metadata: dict[str, Any]) -> pd.Da
     return filtered
 
 
+class DeployGuardError(RuntimeError):
+    """Raised when the deploy guard blocks publishing bad picks.
+
+    run_live_pipeline catches this, prints the block reason, and exits 1 WITHOUT
+    overwriting latest_picks.json — so the Vercel site keeps yesterday's picks
+    instead of publishing a bad set.
+    """
+
+
 def _enforce_deploy_guard(picks: list[dict[str, Any]], predictions_df: pd.DataFrame) -> None:
+    """Block the publish (raise DeployGuardError) if ANY kill criterion fires:
+    Box 1 winner pct > 25%, any vacant runner in picks, or any maiden race in picks.
+    Always logs the guard inputs first so a blocked run is explainable.
+    """
     if not picks:
         return
-    box1_pct = sum(1 for p in picks if int(p.get("box") or 0) == 1) / len(picks)
-    if box1_pct > 0.25:
-        raise RuntimeError(f"Deploy guard blocked publish: Box 1 picks at {box1_pct:.1%} (>25%)")
 
-    for p in picks:
-        if _is_vacant_runner_name(p.get("dog_name")):
-            raise RuntimeError("Deploy guard blocked publish: vacant runner present in final picks")
+    n = len(picks)
+    box1_pct = sum(1 for p in picks if int(p.get("box") or 0) == 1) / n
+    n_vacant = sum(1 for p in picks if _is_vacant_runner_name(p.get("dog_name")))
 
-    for p in picks:
-        grade = predictions_df.loc[
+    def _pick_grade(p: dict[str, Any]) -> Any:
+        if "_grade" not in predictions_df.columns:
+            return None
+        g = predictions_df.loc[
             (predictions_df["_venue"] == p.get("venue"))
             & (predictions_df["_race_number"] == p.get("race_number"))
             & (predictions_df["_dog_name"] == p.get("dog_name")),
             "_grade",
         ]
-        if not grade.empty and _is_maiden_grade(grade.iloc[0]):
-            raise RuntimeError("Deploy guard blocked publish: maiden race present in final picks")
+        return g.iloc[0] if not g.empty else None
+
+    n_maiden = sum(1 for p in picks if _is_maiden_grade(_pick_grade(p)))
+
+    # Observability: always log the guard inputs (every run) so a block is explainable.
+    logger.info(
+        "Deploy-guard inputs: picks=%d box1_pct=%.1f%% vacant_in_picks=%d maiden_in_picks=%d",
+        n, box1_pct * 100, n_vacant, n_maiden,
+    )
+
+    reasons: list[str] = []
+    if box1_pct > 0.25:
+        reasons.append(f"Box 1 winner pct {box1_pct:.1%} (>25%)")
+    if n_vacant > 0:
+        reasons.append(f"{n_vacant} vacant runner(s) present in picks")
+    if n_maiden > 0:
+        reasons.append(f"{n_maiden} maiden race(s) present in picks")
+
+    if reasons:
+        raise DeployGuardError("; ".join(reasons))
 
 
 def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
@@ -345,6 +375,13 @@ def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
     box_distribution = predictions_df.groupby("_dog_number").size().sort_index().to_dict()
     logger.info("Box distribution in predictions: %s", box_distribution)
     picks = select_bets(predictions_df, config)
+
+    # Observability (Task 4): winner-pick distribution by box every run.
+    pick_box_dist: dict[int, int] = {}
+    for p in picks:
+        b = int(p.get("box") or 0)
+        pick_box_dist[b] = pick_box_dist.get(b, 0) + 1
+    logger.info("Winner-pick distribution by box: %s", dict(sorted(pick_box_dist.items())))
 
     n_runners = int(len(raw_df))
     n_venues = int(raw_df["venue"].nunique()) if "venue" in raw_df.columns else 0
