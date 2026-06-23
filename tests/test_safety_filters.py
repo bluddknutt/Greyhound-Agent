@@ -62,3 +62,46 @@ def test_race_skipped_when_too_few_after_vacant_drop():
     assert out.empty
     reasons = {s["reason"] for s in meta["skipped_races"]}
     assert "insufficient_valid_runners" in reasons
+
+
+# --------------------------------------------------------------------------- #
+# Task 3 — maiden / low-information filter
+# --------------------------------------------------------------------------- #
+def test_maiden_grade_with_three_low_start_runners_skipped():
+    meta = {"source": "tab", "skipped_races": []}
+    # grade 'Maiden', 3 of 6 with <3 prior starts -> skip
+    runners = [("A", "Maiden", 0), ("B", "Maiden", 1), ("C", "Maiden", 2),
+               ("D", "Maiden", 10), ("E", "Maiden", 12), ("F", "Maiden", 20)]
+    df = pd.DataFrame(_race_rows("Bendigo", 2, runners))
+    out = _apply_race_filters(df, meta)
+    assert out.empty
+    assert any(s["reason"] in ("low_information_maiden", "low_information_unknown_grade")
+               for s in meta["skipped_races"])
+
+
+def test_unknown_grade_with_three_low_start_runners_skipped():
+    meta = {"source": "tab", "skipped_races": []}
+    runners = [("A", "", 0), ("B", None, 1), ("C", "", 2),
+               ("D", "", 9), ("E", "", 15), ("F", "", 30)]
+    df = pd.DataFrame(_race_rows("Healesville", 4, runners))
+    out = _apply_race_filters(df, meta)
+    assert out.empty
+
+
+def test_experienced_field_not_skipped():
+    # Graded race, all runners experienced -> kept.
+    meta = {"source": "tab", "skipped_races": []}
+    runners = [(f"Dog {i}", "5", 25) for i in range(6)]
+    df = pd.DataFrame(_race_rows("Gosford", 5, runners))
+    out = _apply_race_filters(df, meta)
+    assert len(out) == 6
+    assert not meta["skipped_races"]
+
+
+def test_maiden_but_experienced_field_not_skipped():
+    # Maiden grade label but the dogs have starts -> NOT low-info, keep.
+    meta = {"source": "tab", "skipped_races": []}
+    runners = [(f"Dog {i}", "Maiden", 8) for i in range(6)]
+    df = pd.DataFrame(_race_rows("Dapto", 6, runners))
+    out = _apply_race_filters(df, meta)
+    assert len(out) == 6

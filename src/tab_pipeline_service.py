@@ -265,23 +265,44 @@ def _apply_race_filters(raw_df: pd.DataFrame, metadata: dict[str, Any]) -> pd.Da
         )
         filtered = filtered[filtered["_small"].isna()].drop(columns=["_small"])
 
-    maiden_races = filtered.groupby(["venue", "race_number"])["grade"].apply(lambda s: all(_is_maiden_grade(g) for g in s))
-    maiden_races = maiden_races[maiden_races]
-    for venue, race_num in maiden_races.index:
-        skipped.append({
-            "source": metadata.get("source"),
-            "venue": venue,
-            "race_number": int(race_num),
-            "reason": "low_information_maiden",
-            "message": "All runners are maiden-grade",
-        })
-    if not maiden_races.empty:
-        filtered = filtered.merge(
-            maiden_races.rename("_maiden").reset_index(),
-            on=["venue", "race_number"],
-            how="left",
-        )
-        filtered = filtered[filtered["_maiden"].isna()].drop(columns=["_maiden"])
+    # Low-information / maiden filter (Task 3). Skip a race when its runners
+    # carry too little form to model reliably:
+    #   * grade matches /maiden/i  AND  >= 3 runners have prior_starts < 3, OR
+    #   * grade is null/unknown    AND  >= 3 runners have prior_starts < 3.
+    # When no prior-starts column is present (some CSV sources), fall back to the
+    # original rule: skip only when every runner is maiden-grade.
+    low_info_keys: list[tuple[Any, Any]] = []
+    for (venue, race_num), race_df in filtered.groupby(["venue", "race_number"]):
+        grades = list(race_df["grade"]) if "grade" in race_df.columns else []
+        any_maiden = any(_is_maiden_grade(g) for g in grades)
+        all_maiden = bool(grades) and all(_is_maiden_grade(g) for g in grades)
+        # NaN-safe blank check: a None grade becomes NaN in the DataFrame.
+        grade_unknown = (not grades) or all(pd.isna(g) or not str(g).strip() for g in grades)
+
+        is_low, reason = False, "low_information_maiden"
+        if "_career_starts" in race_df.columns:
+            starts = pd.to_numeric(race_df["_career_starts"], errors="coerce")
+            n_low = int((starts < 3).sum())
+            if (any_maiden or grade_unknown) and n_low >= 3:
+                is_low = True
+                reason = "low_information_maiden" if any_maiden else "low_information_unknown_grade"
+        elif all_maiden:
+            # No prior-starts column: fall back to the original all-maiden rule.
+            is_low = True
+        if is_low:
+            low_info_keys.append((venue, race_num))
+            skipped.append({
+                "source": metadata.get("source"),
+                "venue": venue,
+                "race_number": int(race_num),
+                "reason": reason,
+                "message": "Maiden / low-information race skipped (insufficient form)",
+            })
+
+    if low_info_keys:
+        key_set = set(low_info_keys)
+        keep = ~filtered.apply(lambda r: (r["venue"], r["race_number"]) in key_set, axis=1)
+        filtered = filtered[keep]
 
     return filtered
 
