@@ -389,6 +389,18 @@ def run_pipeline(options: PipelineOptions) -> dict[str, Any]:
 
     picks_json = format_picks_json(picks, date_str, source=options.source)
 
+    # Observability (Task 6): there is NO "paper unlock 94/20" counter in this
+    # repo's pipeline (such a paper->live promotion gate would live in
+    # results_tracker / the frontend, not here), so there is no unlock condition
+    # to instrument. Instead log the paper-run state every run so the inputs to
+    # any promotion decision are visible. Paper-only — no real stakes are placed.
+    total_paper_stake = float(sum(p.get("bet_amount", 0) for p in picks))
+    logger.info(
+        "Paper-mode run state: source=%s picks=%d races=%d total_paper_stake=%.2f avg_model_prob=%s",
+        options.source, len(picks), n_races, total_paper_stake,
+        picks_json.get("summary", {}).get("avg_model_prob"),
+    )
+
     skipped_races = metadata.get("skipped_races", [])
     if skipped_races:
         logger.info("Skipped races: %d", len(skipped_races))
